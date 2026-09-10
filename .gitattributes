@@ -1,0 +1,22 @@
+* text=auto
+
+*.jl text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.csv text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.py text eol=lf
+*.ps1 text eol=lf
+*.txt text eol=lf
+
+*.png binary
+*.pdf binary
+*.docx binary
+
+# Preserve published SDEBO evidence byte-for-byte so its SHA256SUMS stays valid.
+"Standard Database for Banking and Office Test/SDEBO-S750-*/**" -text whitespace=cr-at-eol
+
+# This immutable test log is covered by verification/FINAL-SHA256SUMS.txt.
+verification/pkg-test-server-mandatory-final.log whitespace=-trailing-space

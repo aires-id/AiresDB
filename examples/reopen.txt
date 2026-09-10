@@ -1,0 +1,3 @@
+Pilih 'Demo' -:
+Tampilkan 'Karyawan' -:
+.exit

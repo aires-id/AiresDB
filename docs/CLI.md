@@ -1,0 +1,21 @@
+# AiresDB monitor CLI
+
+CLI resmi adalah client HTTP untuk TinyServer.
+
+```sh
+airesdb -u root -p
+airesdb -h 192.168.1.20 -P 1972 -u root -p
+airesdb -u root -p --no-banner --file script.txt
+```
+
+Password disembunyikan pada TTY. Banner hanya muncul pada terminal interaktif
+dan dapat dimatikan dengan `--no-banner`. Prompt awal adalah
+`AiresDB [(none)]>`; sesudah pemilihan database menjadi `AiresDB [Nama]>`.
+Statement multiline memakai prompt `->` dan wajib berakhir dengan `-:`.
+
+Perintah monitor: `.help`, `.databases`, `.tables`, `.schema Nama`, `.current`,
+`.mvcc`, `.checkpoint`, `.vacuum`, `.cancel`, dan `.exit`. Perintah engine
+dikirim lewat session server. `.exit` menghapus session.
+
+Jika server tidak tersedia, CLI mencetak `ERROR A1000`, keluar non-zero, dan tidak
+membuka file database lokal.

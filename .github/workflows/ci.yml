@@ -1,0 +1,24 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.12'
+      - name: Instantiate
+        run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: Test
+        run: julia --startup-file=no --threads=1 --project=. -e 'using Pkg; Pkg.test()'

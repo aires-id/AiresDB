@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "Jika memakai AiresDB dalam karya ilmiah, sitasikan perangkat lunak ini."
+type: software
+title: "AiresDB"
+version: 0.1.0
+date-released: 2026-09-07
+authors:
+  - family-names: "Wibisono"
+    given-names: "Aires Zam"
+license: NCSA

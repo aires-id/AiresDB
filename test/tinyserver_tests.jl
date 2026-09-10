@@ -1,0 +1,300 @@
+module TinyServerTests
+
+using Test
+using AiresDB
+using AiresDB.Internal
+using HTTP
+using JSON3
+using Random
+
+const TS = AiresDB
+const PASSWORD = "correct horse battery staple"
+
+function request_json(method, url, body=nothing)
+    headers = ["Content-Type" => "application/json"]
+    payload = body === nothing ? UInt8[] : Vector{UInt8}(codeunits(JSON3.write(body)))
+    client = HTTP.Client()
+    response = try
+        HTTP.request(client, method, url, headers, payload; status_exception=false, retry=false)
+    finally
+        close(client)
+    end
+    parsed = isempty(response.body) ? Dict{String,Any}() : JSON3.read(String(response.body), Dict{String,Any})
+    response.status, parsed
+end
+
+function start_fixture(directory; kwargs...)
+    last_error = nothing
+    for _ in 1:20
+        port = rand(25_000:49_000)
+        config = TinyServerConfig(; port, data_root=directory, kwargs...)
+        try
+            return start_tinyserver(config; password=PASSWORD)
+        catch error
+            last_error = error
+            isfile(joinpath(directory, TS.ROOT_CREDENTIAL_FILE)) || continue
+        end
+    end
+    throw(last_error)
+end
+
+login(server; user="root", password=PASSWORD) = request_json("POST", server_url(server) * "/session", (; user, password))
+query(server, token, text) = request_json("POST", server_url(server) * "/query", (; session=token, query=text))
+
+@testset "AiresDB TinyServer and mandatory client" begin
+    @test TinyServerConfig().host == "127.0.0.1"
+    @test TinyServerConfig().port == 1972
+    @test TinyServerConfig().max_request_body == 8 * 1024 * 1024
+    @test TinyServerConfig().max_sessions == 64
+    @test TinyServerConfig().idle_timeout == 600.0
+
+    @testset "credentials, health, sessions, values, persistence" begin
+        mktempdir() do directory
+            server = start_fixture(directory)
+            base = server_url(server)
+            try
+                credential = read(joinpath(directory, TS.ROOT_CREDENTIAL_FILE), String)
+                @test !occursin(PASSWORD, credential)
+                @test occursin("pbkdf2-hmac-sha256", credential)
+
+                status, health = request_json("GET", base * "/health")
+                @test status == 200
+                @test health["ok"] === true
+                @test health["server"] == "AiresDB"
+                @test health["version"] == "0.1.0"
+                @test !haskey(health, "data_root")
+
+                status, denied = login(server; password="incorrect password")
+                @test status == 401
+                @test denied["error"]["code"] == "A1001"
+
+                status, logged_in = login(server)
+                @test status == 201
+                token = String(logged_in["session"])
+                @test length(token) == 64
+                @test logged_in["connection_id"] == 1
+
+                status, created = query(server, token, "Buat 'Perusahaan' -:")
+                @test status == 200
+                @test created["database"] == "Perusahaan"
+                @test isfile(joinpath(directory, "Perusahaan.aires"))
+
+                status, _ = query(server, token,
+                    "Buat Tabel 'Nilai' Isi 'Id & Nama & Desimal & Uang & Catatan' Dengan 'Id = I(P) & Nama = C & Desimal = D & Uang = U & Catatan = C(50&Null)' -:")
+                @test status == 200
+                status, _ = query(server, token, "Isi Tabel 'Nilai' '1 & Ångström 東京 & 12.340 & 99.95 & NULL' '2 & Aires & 0.01 & 1.00 & aman' -:")
+                @test status == 200
+                status, result = query(server, token, "Tampilkan 'Nilai' -:")
+                @test status == 200
+                @test result["row_count"] == 2
+                @test result["rows"][1][2] == "Ångström 東京"
+                @test result["rows"][1][3]["type"] == "decimal"
+                @test result["rows"][1][3]["value"] == "12.34"
+                @test result["rows"][1][4]["type"] == "money"
+                @test result["rows"][1][4]["value"] == "99.95"
+                @test result["rows"][1][5] === nothing
+
+                status, syntax = query(server, token, "Tampilkan -:")
+                @test status == 400
+                @test syntax["error"]["code"] == "A2000"
+                @test !occursin("Stacktrace", JSON3.write(syntax))
+
+                status, traversal = query(server, token, "Pilih '../../Escape' -:")
+                @test status == 400
+                @test traversal["ok"] === false
+                @test !isfile(joinpath(dirname(directory), "Escape.aires"))
+
+                status, _ = query(server, token, "Transaksi -:")
+                @test status == 200
+                query(server, token, "Isi Tabel 'Nilai' '3 & Rollback & 3.00 & 3.00 & NULL' -:")
+                status, rolled_back = query(server, token, "Kembalikan -:")
+                @test status == 200
+                @test occursin("dikembalikan", rolled_back["message"])
+                _, after_rollback = query(server, token, "Tampilkan 'Nilai' -:")
+                @test after_rollback["row_count"] == 2
+
+                query(server, token, "Transaksi -:")
+                query(server, token, "Isi Tabel 'Nilai' '3 & Commit & 3.00 & 3.00 & NULL' -:")
+                status, committed = query(server, token, "Gabungkan -:")
+                @test status == 200
+                @test occursin("digabungkan", committed["message"])
+
+                status, databases = query(server, token, ".databases")
+                @test status == 200
+                @test occursin("Perusahaan.aires", databases["message"])
+
+                status, _ = request_json("DELETE", base * "/session/$token")
+                @test status == 200
+                status, invalid = query(server, token, "Tampilkan 'Nilai' -:")
+                @test status == 401
+                @test invalid["error"]["code"] == "A1002"
+            finally
+                stop_tinyserver!(server)
+            end
+
+            restarted = start_tinyserver(TinyServerConfig(port=rand(25_000:49_000), data_root=directory))
+            try
+                _, logged_in = login(restarted)
+                token = String(logged_in["session"])
+                query(restarted, token, "Pilih 'Perusahaan' -:")
+                status, persisted = query(restarted, token, "Tampilkan 'Nilai' -:")
+                @test status == 200
+                @test persisted["row_count"] == 3
+            finally
+                stop_tinyserver!(restarted)
+            end
+        end
+    end
+
+    @testset "rollback on disconnect, conflict and error identity" begin
+        mktempdir() do directory
+            server = start_fixture(directory)
+            try
+                _, first_login = login(server); first = String(first_login["session"])
+                query(server, first, "Buat 'Bank' -:")
+                query(server, first, "Buat Tabel 'Rekening' Isi 'Id & Saldo' Dengan 'Id = I(P) & Saldo = U' -:")
+                query(server, first, "Isi Tabel 'Rekening' '1 & 100.00' -:")
+
+                _, second_login = login(server); second = String(second_login["session"])
+                query(server, second, "Pilih 'Bank' -:")
+                query(server, first, "Transaksi -:"); query(server, second, "Transaksi -:")
+                query(server, first, "Tabel_Upt 'Rekening' Isi 'Saldo = 110.00' Dengan 'Id = 1' -:")
+                query(server, second, "Tabel_Upt 'Rekening' Isi 'Saldo = 120.00' Dengan 'Id = 1' -:")
+                commit_status, _ = query(server, first, "Gabungkan -:")
+                @test commit_status == 200
+                status, conflict = query(server, second, "Gabungkan -:")
+                @test status == 409
+                @test conflict["error"]["code"] == "A3001"
+                @test conflict["error"]["category"] == "Transaction Conflict"
+
+                _, third_login = login(server); third = String(third_login["session"])
+                query(server, third, "Pilih 'Bank' -:")
+                query(server, third, "Transaksi -:")
+                query(server, third, "Isi Tabel 'Rekening' '2 & 50.00' -:")
+                request_json("DELETE", server_url(server) * "/session/$third")
+                _, check_login = login(server); check = String(check_login["session"])
+                query(server, check, "Pilih 'Bank' -:")
+                _, rows = query(server, check, "Tampilkan 'Rekening' -:")
+                @test rows["row_count"] == 1
+
+                response = TS._error_response(AiresError("Commit Outcome Unknown", "Durability acknowledgement lost."))
+                body = JSON3.read(String(response.body), Dict{String,Any})
+                @test response.status == 503
+                @test body["error"]["code"] == "A3002"
+                @test body["error"]["category"] == "Commit Outcome Unknown"
+            finally
+                stop_tinyserver!(server)
+            end
+
+            expiring = start_tinyserver(TinyServerConfig(port=rand(25_000:49_000),
+                data_root=directory, idle_timeout=0.1))
+            try
+                _, opened = login(expiring); token = String(opened["session"])
+                query(expiring, token, "Buat 'Expiry' -:")
+                query(expiring, token, "Buat Tabel 'T' Isi 'Id' Dengan 'Id = I(P)' -:")
+                query(expiring, token, "Transaksi -:")
+                query(expiring, token, "Isi Tabel 'T' '1' -:")
+                sleep(0.35)
+                @test isempty(expiring.sessions)
+                _, reopened = login(expiring); replacement = String(reopened["session"])
+                query(expiring, replacement, "Pilih 'Expiry' -:")
+                _, rows = query(expiring, replacement, "Tampilkan 'T' -:")
+                @test rows["row_count"] == 0
+            finally
+                stop_tinyserver!(expiring)
+            end
+        end
+    end
+
+    @testset "resource limits and expiry" begin
+        mktempdir() do directory
+            server = start_fixture(directory; max_sessions=1, idle_timeout=10.0, max_request_body=128)
+            try
+                _, first_login = login(server); token = String(first_login["session"])
+                status, limited = login(server)
+                @test status == 503
+                @test limited["error"]["code"] == "A1005"
+                server.sessions[token].last_activity = time() - 11.0
+                status, expired = query(server, token, ".current")
+                @test status == 401
+                @test expired["error"]["code"] == "A1002"
+                status, replacement = login(server)
+                @test status == 201
+
+                request = HTTP.Request("POST", "/query", ["Content-Type" => "application/json"], fill(UInt8('x'), 129))
+                response = tinyserver_handler(server, request)
+                @test response.status == 413
+            finally
+                stop_tinyserver!(server)
+            end
+        end
+    end
+
+    @testset "CLI is server-only, multiline and banner rules" begin
+        mktempdir() do directory
+            unavailable_port = rand(50_000:59_000)
+            output = IOBuffer(); errors = IOBuffer()
+            code = run_client(port=unavailable_port, password=PASSWORD, ask_password=false,
+                input=IOBuffer(".exit\n"), output=output, error_output=errors,
+                interactive=false, banner=false)
+            @test code == 1
+            @test occursin("ERROR A1000", String(take!(errors)))
+            @test isempty(readdir(directory))
+
+            project = dirname(@__DIR__)
+            launcher = joinpath(project, "bin", "airesdb.jl")
+            process_out = IOBuffer(); process_err = IOBuffer()
+            command = Cmd(`$(Base.julia_cmd()) --startup-file=no --project=$project $launcher -P $unavailable_port -u root -p`; dir=directory)
+            process = run(pipeline(ignorestatus(command), stdin=IOBuffer("no server password\n"),
+                stdout=process_out, stderr=process_err))
+            @test process.exitcode != 0
+            @test occursin("ERROR A1000", String(take!(process_err)))
+            @test isempty(readdir(directory))
+
+            server = start_fixture(directory)
+            try
+                output = IOBuffer(); errors = IOBuffer()
+                source = "Buat 'CLI' -:\nBuat Tabel 'T' Isi 'Id & Nama' Dengan 'Id = I(P) & Nama = C' -:\nIsi Tabel 'T' '1 & Server' -:\nPilih 'Nama'\nDari 'T'\n-:\n.exit\n"
+                code = run_client(port=server.config.port, password=PASSWORD, ask_password=false,
+                    input=IOBuffer(source), output=output, error_output=errors,
+                    interactive=true, banner=false)
+                text = String(take!(output))
+                @test code == 0
+                @test isempty(String(take!(errors)))
+                @test occursin("AiresDB [(none)]>", text)
+                @test occursin("AiresDB [CLI]>", text)
+                @test occursin("->", text)
+                @test occursin("Server", text)
+                @test !occursin(".***************", text)
+
+                output = IOBuffer()
+                code = run_client(port=server.config.port, password=PASSWORD, ask_password=false,
+                    input=IOBuffer(".exit\n"), output=output, error_output=IOBuffer(),
+                    interactive=false)
+                @test code == 0
+                @test isempty(String(take!(output)))
+            finally
+                stop_tinyserver!(server)
+            end
+        end
+    end
+
+    @testset "no embedded fallback in official CLI source" begin
+        source = read(joinpath(dirname(@__DIR__), "src", "cli.jl"), String)
+        @test !occursin("Session(", source)
+        @test !occursin("Engine(", source)
+        @test !occursin("open_database!", source)
+        @test !occursin(".aires\"", source)
+        @test !occursin("--root", source)
+        @test occursin("/session", source)
+        @test occursin("/query", source)
+        project = dirname(@__DIR__)
+        help = read(`$(Base.julia_cmd()) --startup-file=no --project=$project -m AiresDB --help`, String)
+        @test occursin("airesdb server", help)
+        @test !occursin("--root", help)
+        public_surface = read(`$(Base.julia_cmd()) --startup-file=no --project=$project -e "using AiresDB; print(isdefined(Main, :Engine), ',', isdefined(Main, :Session))"`, String)
+        @test public_surface == "false,false"
+    end
+end
+
+end

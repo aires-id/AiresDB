@@ -1,0 +1,1 @@
+﻿Attempt 1 stopped during T05. One worker closed its Session after completing its 250 updates while other workers were still committing. The shared page manager then reported "Page manager sudah ditutup" and Commit Outcome Unknown. T05 was rerun on an isolated database copy while retaining all worker sessions through the measurement, so teardown does not overlap measured work.

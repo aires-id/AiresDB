@@ -1,0 +1,6 @@
+[deps]
+AiresDB = "e39701c5-c21a-4d73-a911-e02c68a3ca10"
+DBInterface = "a10d1c49-ce27-4219-8d33-6db1a4562965"
+DuckDB = "d2f5444f-75bc-4fdf-ac35-56f514c445e1"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"

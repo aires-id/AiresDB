@@ -1,0 +1,1 @@
+﻿Attempt 2 was stopped before O01 because the harness did not yet record average process CPU, a required SDEBO 7.20 observation. No score was produced from this incomplete attempt.

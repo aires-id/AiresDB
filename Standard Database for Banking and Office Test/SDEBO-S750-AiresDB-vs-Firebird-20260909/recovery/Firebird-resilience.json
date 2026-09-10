@@ -1,0 +1,463 @@
+{
+  "engine": "Firebird",
+  "engine_version": "5.0.4.1812",
+  "mode": "embedded",
+  "status": true,
+  "tests": {
+    "O01": {
+      "average_cpu_percent_one_core": 91.70856956630836,
+      "correct": true,
+      "disk_growth_bytes": 0,
+      "duration_seconds": 900.594000000001,
+      "end_disk_bytes": 128008192,
+      "end_rss_bytes": 48922624,
+      "errors": [],
+      "first_quarter_median_ms": 0.2747,
+      "iterations": 19797,
+      "last_quarter_median_ms": 0.2786,
+      "latency_drift_ratio": 1.014197306152166,
+      "memory_growth_ratio": -0.12427597331182638,
+      "p95_ms": 26.5451,
+      "peak_rss_bytes": 72753152,
+      "process_cpu_seconds": 825.921875,
+      "restart_ok": true,
+      "start_disk_bytes": 128008192,
+      "start_rss_bytes": 55865344
+    },
+    "Q08": {
+      "common_families": 16,
+      "correct": true,
+      "coverage": {
+        "aggregate": true,
+        "begin_commit_rollback": true,
+        "boolean_and_or": true,
+        "comparison": true,
+        "create_open": true,
+        "delete": true,
+        "filter": true,
+        "group": true,
+        "index_lookup": true,
+        "insert": true,
+        "join_relation": true,
+        "limit": true,
+        "order": true,
+        "range": true,
+        "select_project": true,
+        "update": true
+      },
+      "passed": 16
+    },
+    "R01": {
+      "backups": [
+        {
+          "bytes": 63951872,
+          "cycle": 1,
+          "elapsed_ms": 3870.2261,
+          "method": "native gbak logical backup",
+          "returncode": 0,
+          "stderr": ""
+        },
+        {
+          "bytes": 63951872,
+          "cycle": 2,
+          "elapsed_ms": 3938.937,
+          "method": "native gbak logical backup",
+          "returncode": 0,
+          "stderr": ""
+        },
+        {
+          "bytes": 63951872,
+          "cycle": 3,
+          "elapsed_ms": 3849.9874,
+          "method": "native gbak logical backup",
+          "returncode": 0,
+          "stderr": ""
+        }
+      ],
+      "correct": true,
+      "native": true,
+      "usable": true
+    },
+    "R02": {
+      "correct": true,
+      "restores": [
+        {
+          "bytes": 128008192,
+          "cycle": 1,
+          "digest": "e812626818156548bfe0d7cca8f918c4dbca86cabaf3bc1572a62a3cecd57353",
+          "elapsed_ms": 7966.8631,
+          "matches": true,
+          "returncode": 0,
+          "stderr": ""
+        },
+        {
+          "bytes": 128008192,
+          "cycle": 2,
+          "digest": "e812626818156548bfe0d7cca8f918c4dbca86cabaf3bc1572a62a3cecd57353",
+          "elapsed_ms": 7867.0027,
+          "matches": true,
+          "returncode": 0,
+          "stderr": ""
+        },
+        {
+          "bytes": 128008192,
+          "cycle": 3,
+          "digest": "e812626818156548bfe0d7cca8f918c4dbca86cabaf3bc1572a62a3cecd57353",
+          "elapsed_ms": 8253.36,
+          "matches": true,
+          "returncode": 0,
+          "stderr": ""
+        }
+      ],
+      "source_digest": "e812626818156548bfe0d7cca8f918c4dbca86cabaf3bc1572a62a3cecd57353"
+    },
+    "R03": {
+      "correct": true,
+      "deviation": "VM hard power-off unavailable on this physical host",
+      "process_kill_cycles": [
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "cycle": 1,
+          "exitcode": 1,
+          "marker_seen": true,
+          "stage": "after_debit",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "cycle": 2,
+          "exitcode": 1,
+          "marker_seen": true,
+          "stage": "after_credit",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "cycle": 3,
+          "exitcode": 1,
+          "marker_seen": true,
+          "stage": "before_commit",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108917,
+            118838
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "cycle": 4,
+          "exitcode": 1,
+          "marker_seen": true,
+          "stage": "after_commit",
+          "state": "POST_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108917,
+            118838
+          ],
+          "balances_before": [
+            108917,
+            118838
+          ],
+          "cycle": 5,
+          "exitcode": 1,
+          "marker_seen": true,
+          "stage": "before_commit",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        }
+      ],
+      "vm_power_off_cycles": 0
+    },
+    "R04": {
+      "correct": true,
+      "engine_note": "Firebird integrates recovery into database pages; no separate user-visible WAL tail exists",
+      "gfix_returncode": 0,
+      "index_lookup_after_recovery": true,
+      "unclean_shutdown_cycles": [
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "cycle": 1,
+          "exitcode": 1,
+          "marker_seen": true,
+          "stage": "after_debit",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "cycle": 2,
+          "exitcode": 1,
+          "marker_seen": true,
+          "stage": "after_credit",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "cycle": 3,
+          "exitcode": 1,
+          "marker_seen": true,
+          "stage": "before_commit",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108917,
+            118838
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "cycle": 4,
+          "exitcode": 1,
+          "marker_seen": true,
+          "stage": "after_commit",
+          "state": "POST_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108917,
+            118838
+          ],
+          "balances_before": [
+            108917,
+            118838
+          ],
+          "cycle": 5,
+          "exitcode": 1,
+          "marker_seen": true,
+          "stage": "before_commit",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        }
+      ]
+    },
+    "R05": {
+      "cases": [
+        {
+          "case": "header",
+          "detected_or_recovered": true,
+          "digest": null,
+          "error": "database file appears corrupt (C:\\USERS\\AIRES\\DOCUMENTS\\GITHUB AIRESDB\\STANDARD DATABASE FOR BANKING AND OFFICE TEST\\SDEBO-S750-AIRESDB-VS-FIREBIRD-20260909\\RESILIENCE\\FIREBIRD\\CORRUPTION-HEADER.FDB)\n-wrong page type\n-page 3 is of wrong type (expected pointer, found purposely undefined)",
+          "gfix_returncode": 1,
+          "matches": false,
+          "offset": 16,
+          "opened": false
+        },
+        {
+          "case": "page",
+          "detected_or_recovered": true,
+          "digest": "e812626818156548bfe0d7cca8f918c4dbca86cabaf3bc1572a62a3cecd57353",
+          "error": null,
+          "gfix_returncode": 0,
+          "matches": true,
+          "offset": 8192,
+          "opened": true
+        },
+        {
+          "case": "tail_page",
+          "detected_or_recovered": true,
+          "digest": "e812626818156548bfe0d7cca8f918c4dbca86cabaf3bc1572a62a3cecd57353",
+          "error": null,
+          "gfix_returncode": 0,
+          "matches": true,
+          "offset": 128004096,
+          "opened": true
+        }
+      ],
+      "correct": true,
+      "silent_mismatches": 0
+    },
+    "S01": {
+      "controls": {
+        "authentication": true,
+        "credentials_absent_logs": true,
+        "credentials_not_plaintext": false,
+        "remote_bind_restricted": true,
+        "roles_permissions": true,
+        "session_token_hygiene": true,
+        "transport_or_secure_deployment": true,
+        "unauthenticated_query_rejected": true
+      },
+      "mode_note": "Embedded local-file profile; network transport is not active",
+      "passed": 7,
+      "total": 8
+    },
+    "T03": {
+      "correct": true,
+      "crash_cycles": [
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "cycle": 1,
+          "exitcode": 1,
+          "marker_seen": true,
+          "stage": "after_debit",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "cycle": 2,
+          "exitcode": 1,
+          "marker_seen": true,
+          "stage": "after_credit",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "cycle": 3,
+          "exitcode": 1,
+          "marker_seen": true,
+          "stage": "before_commit",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108917,
+            118838
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "cycle": 4,
+          "exitcode": 1,
+          "marker_seen": true,
+          "stage": "after_commit",
+          "state": "POST_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108917,
+            118838
+          ],
+          "balances_before": [
+            108917,
+            118838
+          ],
+          "cycle": 5,
+          "exitcode": 1,
+          "marker_seen": true,
+          "stage": "before_commit",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        }
+      ],
+      "normal_correct": true,
+      "normal_elapsed_ms": 1546.6142,
+      "normal_transfers": 1000
+    },
+    "T04": {
+      "after": [
+        [
+          108917,
+          118838
+        ],
+        100
+      ],
+      "after_reopen": [
+        [
+          108917,
+          118838
+        ],
+        100
+      ],
+      "before": [
+        [
+          108917,
+          118838
+        ],
+        100
+      ],
+      "correct": true,
+      "cycles": 200
+    },
+    "T05": {
+      "attempted": 1000,
+      "committed": 1000,
+      "correct": true,
+      "final_value": 1000,
+      "lost_updates": 0,
+      "retries": 991,
+      "workers": 4
+    }
+  }
+}

@@ -1,0 +1,32 @@
+Buat 'Demo' -:
+
+Pilih 'Demo' -:
+
+Buat Tabel 'Karyawan'
+Isi 'No & Nama & Gaji'
+Dengan
+'No = I(P) & Nama = C(225&Not Null) & Gaji = U'
+Auto_No
+-:
+
+Isi Tabel 'Karyawan'
+'Aires & 7500000'
+'Fami & 6500000'
+'Saki & 5500000'
+-:
+
+Pilih '*'
+Dari 'Karyawan'
+-:
+
+Pilih 'Nama & Gaji'
+Dari 'Karyawan'
+Dengan
+'Gaji > 6000000'
+-:
+
+Pilih 'Count(*) & Avg(Gaji) & Max(Gaji)'
+Dari 'Karyawan'
+-:
+
+.exit

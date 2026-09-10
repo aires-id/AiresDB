@@ -1,0 +1,106 @@
+{
+  "logical_source_sha256": "abb9654f1a69e5cd47b0ce546116b377ca59d3ec0b83077a7a48d1d2a8669799",
+  "profile": "SDEBO-S750",
+  "representation": "UTF-8 pipe-separated text; money stored as signed integer cents",
+  "seed": 1999,
+  "specification": "SDEBO Revision 1.0",
+  "tables": {
+    "accounts": {
+      "bytes": 3356046,
+      "columns": [
+        "account_id",
+        "customer_id",
+        "account_type",
+        "balance_cents",
+        "status",
+        "opened_at"
+      ],
+      "file": "accounts.psv",
+      "rows": 75000,
+      "sha256": "3f451286503430ffd31a9d9a58c766c9456ea29543382db9730284141764924a"
+    },
+    "branches": {
+      "bytes": 1238,
+      "columns": [
+        "branch_id",
+        "code",
+        "city",
+        "status"
+      ],
+      "file": "branches.psv",
+      "rows": 50,
+      "sha256": "8500fd5f00be2828c81005b55cdcd959e91f6067f4e9477b5dd021c669628f1a"
+    },
+    "customers": {
+      "bytes": 2847098,
+      "columns": [
+        "customer_id",
+        "branch_id",
+        "name",
+        "status",
+        "risk_class",
+        "created_at"
+      ],
+      "file": "customers.psv",
+      "rows": 49950,
+      "sha256": "b230596545be2368b3e37c4724859259a94fea4d26b04cf2db0098fe9f8489a2"
+    },
+    "departments": {
+      "bytes": 2423,
+      "columns": [
+        "department_id",
+        "name",
+        "cost_center"
+      ],
+      "file": "departments.psv",
+      "rows": 100,
+      "sha256": "0107545e6f0fb5032d4fc609d81265145cd89c9d0939fcf5768ca6fe58740734"
+    },
+    "documents": {
+      "bytes": 15409826,
+      "columns": [
+        "document_id",
+        "owner_type",
+        "owner_id",
+        "document_type",
+        "title",
+        "created_at",
+        "checksum"
+      ],
+      "file": "documents.psv",
+      "rows": 114900,
+      "sha256": "bb61a65b3603d745585c271fc35894e57215f7230e4341ed2706f4cc6118accd"
+    },
+    "employees": {
+      "bytes": 611344,
+      "columns": [
+        "employee_id",
+        "department_id",
+        "branch_id",
+        "name",
+        "role",
+        "salary_cents",
+        "status"
+      ],
+      "file": "employees.psv",
+      "rows": 10000,
+      "sha256": "220af1760be946c87f6c6d0c602a4c6aaa9ce7f67540b1a1e457e0064cea31c1"
+    },
+    "transactions": {
+      "bytes": 35811425,
+      "columns": [
+        "transaction_id",
+        "account_id",
+        "timestamp",
+        "type",
+        "amount_cents",
+        "channel",
+        "reference"
+      ],
+      "file": "transactions.psv",
+      "rows": 500000,
+      "sha256": "0947712ad271694a63ca00c82e915d5f119bbbe3d703d468dc05eb6bc8850d35"
+    }
+  },
+  "total_rows": 750000
+}

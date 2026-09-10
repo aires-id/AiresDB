@@ -1,0 +1,25 @@
+{
+  "all_performance_runs_status": true,
+  "all_runs_use_source_digest": true,
+  "dataset_source_digest": "abb9654f1a69e5cd47b0ce546116b377ca59d3ec0b83077a7a48d1d2a8669799",
+  "q05_cross_engine_match": true,
+  "q05_each_engine_stable": {
+    "AiresDB": true,
+    "Firebird": true
+  },
+  "q06_cross_engine_match": true,
+  "q06_each_engine_stable": {
+    "AiresDB": true,
+    "Firebird": true
+  },
+  "q07_cross_engine_match": true,
+  "q07_each_engine_stable": {
+    "AiresDB": true,
+    "Firebird": true
+  },
+  "resilience_status": {
+    "AiresDB": true,
+    "Firebird": true
+  },
+  "valid": true
+}

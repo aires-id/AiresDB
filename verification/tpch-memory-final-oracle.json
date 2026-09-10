@@ -1,0 +1,171 @@
+{
+  "passed": true,
+  "oracle": "Python sqlite3 in-memory independent SQL",
+  "scale": 0.001,
+  "cardinalities": {
+    "customer": 157,
+    "lineitem": 5956,
+    "nation": 25,
+    "orders": 1512,
+    "part": 205,
+    "partsupp": 830,
+    "region": 5,
+    "supplier": 25
+  },
+  "queries": [
+    {
+      "query": "Q01",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 4,
+      "oracle_rows": 4
+    },
+    {
+      "query": "Q02",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 1,
+      "oracle_rows": 1
+    },
+    {
+      "query": "Q03",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 6,
+      "oracle_rows": 6
+    },
+    {
+      "query": "Q04",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 5,
+      "oracle_rows": 5
+    },
+    {
+      "query": "Q05",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 5,
+      "oracle_rows": 5
+    },
+    {
+      "query": "Q06",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 1,
+      "oracle_rows": 1
+    },
+    {
+      "query": "Q07",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 4,
+      "oracle_rows": 4
+    },
+    {
+      "query": "Q08",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 2,
+      "oracle_rows": 2
+    },
+    {
+      "query": "Q09",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 175,
+      "oracle_rows": 175
+    },
+    {
+      "query": "Q10",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 20,
+      "oracle_rows": 20
+    },
+    {
+      "query": "Q11",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 1,
+      "oracle_rows": 1
+    },
+    {
+      "query": "Q12",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 2,
+      "oracle_rows": 2
+    },
+    {
+      "query": "Q13",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 20,
+      "oracle_rows": 20
+    },
+    {
+      "query": "Q14",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 1,
+      "oracle_rows": 1
+    },
+    {
+      "query": "Q15",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 1,
+      "oracle_rows": 1
+    },
+    {
+      "query": "Q16",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 25,
+      "oracle_rows": 25
+    },
+    {
+      "query": "Q17",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 1,
+      "oracle_rows": 1
+    },
+    {
+      "query": "Q18",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 1,
+      "oracle_rows": 1
+    },
+    {
+      "query": "Q19",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 1,
+      "oracle_rows": 1
+    },
+    {
+      "query": "Q20",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 1,
+      "oracle_rows": 1
+    },
+    {
+      "query": "Q21",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 1,
+      "oracle_rows": 1
+    },
+    {
+      "query": "Q22",
+      "passed": true,
+      "order_by_passed": true,
+      "rows": 5,
+      "oracle_rows": 5
+    }
+  ]
+}

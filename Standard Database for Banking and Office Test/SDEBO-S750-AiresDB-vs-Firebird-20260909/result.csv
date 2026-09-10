@@ -1,0 +1,41 @@
+engine,version,test,weight,grade,points,weighted_points,metric,median,target_b,pfr,evidence
+AiresDB,0.1.0,Q01,3,A,4.0,12.0,throughput_rows_s,23102.8576340459,1000.0,23.1028576340459,
+AiresDB,0.1.0,Q02,4,A,4.0,16.0,p95_ms,2.5221,5.0,1.9824749216922406,
+AiresDB,0.1.0,Q03,3,A,4.0,12.0,p95_ms,2.5378,15.0,5.910631255418079,
+AiresDB,0.1.0,Q04,3,A,4.0,12.0,p95_ms,2.47,25.0,10.121457489878543,
+AiresDB,0.1.0,Q05,3,AB,3.5,10.5,p50_ms,1094.064,1500.0,1.371034966875795,
+AiresDB,0.1.0,Q06,4,A,4.0,16.0,p50_ms,27.8837,2000.0,71.72649253865161,
+AiresDB,0.1.0,Q07,2,A,4.0,8.0,throughput_rows_s,159818.50754573496,50000.0,3.1963701509146993,
+AiresDB,0.1.0,Q08,3,A,4.0,12.0,,,,,16/16 controls/families
+AiresDB,0.1.0,T01,3,A,4.0,12.0,p95_ms,3.6527,10.0,2.737700878801982,
+AiresDB,0.1.0,T02,4,A,4.0,16.0,p95_ms,3.4907,15.0,4.2971323803248636,
+AiresDB,0.1.0,T03,4,A,4.0,16.0,,,,,1000 transfers plus 5 crash boundaries
+AiresDB,0.1.0,T04,4,A,4.0,16.0,,,,,200 rollback cycles preserved state
+AiresDB,0.1.0,T05,4,A,4.0,16.0,,,,,4 workers; 0 lost updates
+AiresDB,0.1.0,R01,3,BC,2.5,7.5,,,,,3 usable offline copies; non-native cap
+AiresDB,0.1.0,R02,4,B,3.0,12.0,,,,,3 manually orchestrated restores match
+AiresDB,0.1.0,R03,4,A,4.0,16.0,,,,,5 process-kill cycles valid; VM unavailable
+AiresDB,0.1.0,R04,4,A,4.0,16.0,,,,,"reopen, recovery, and index checks passed"
+AiresDB,0.1.0,R05,4,A,4.0,16.0,,,,,3 corruptions detected or safely recovered; no silent mismatch
+AiresDB,0.1.0,S01,3,C,2.0,6.0,,,,,5/8 controls/families
+AiresDB,0.1.0,O01,2,B,3.0,6.0,,,,,memory growth 13.90%; 900.9s; 0 errors
+Firebird,5.0.4.1812,Q01,3,A,4.0,12.0,throughput_rows_s,1808.662875017005,1000.0,1.808662875017005,
+Firebird,5.0.4.1812,Q02,4,A,4.0,16.0,p95_ms,0.4062,5.0,12.309207287050715,
+Firebird,5.0.4.1812,Q03,3,A,4.0,12.0,p95_ms,0.3107,15.0,48.2780817508851,
+Firebird,5.0.4.1812,Q04,3,A,4.0,12.0,p95_ms,3.8637,25.0,6.470481662654968,
+Firebird,5.0.4.1812,Q05,3,A,4.0,12.0,p50_ms,995.9056,1500.0,1.5061668495487925,
+Firebird,5.0.4.1812,Q06,4,A,4.0,16.0,p50_ms,5.489,2000.0,364.3650938240117,
+Firebird,5.0.4.1812,Q07,2,BC,2.5,5.0,throughput_rows_s,41399.76239848365,50000.0,0.8279952479696729,
+Firebird,5.0.4.1812,Q08,3,A,4.0,12.0,,,,,16/16 controls/families
+Firebird,5.0.4.1812,T01,3,A,4.0,12.0,p95_ms,1.9083,10.0,5.24026620552324,
+Firebird,5.0.4.1812,T02,4,A,4.0,16.0,p95_ms,1.6259,15.0,9.225659634663879,
+Firebird,5.0.4.1812,T03,4,A,4.0,16.0,,,,,1000 transfers plus 5 crash boundaries
+Firebird,5.0.4.1812,T04,4,A,4.0,16.0,,,,,200 rollback cycles preserved state
+Firebird,5.0.4.1812,T05,4,A,4.0,16.0,,,,,4 workers; 0 lost updates
+Firebird,5.0.4.1812,R01,3,A,4.0,12.0,,,,,3 native gbak backups usable
+Firebird,5.0.4.1812,R02,4,A,4.0,16.0,,,,,3 automated native restores match
+Firebird,5.0.4.1812,R03,4,A,4.0,16.0,,,,,5 process-kill cycles valid; VM unavailable
+Firebird,5.0.4.1812,R04,4,A,4.0,16.0,,,,,"reopen, recovery, and index checks passed"
+Firebird,5.0.4.1812,R05,4,A,4.0,16.0,,,,,3 corruptions detected or safely recovered; no silent mismatch
+Firebird,5.0.4.1812,S01,3,AB,3.5,10.5,,,,,7/8 controls/families
+Firebird,5.0.4.1812,O01,2,A,4.0,8.0,,,,,memory growth 0.00%; 900.6s; 0 errors

@@ -1,0 +1,80 @@
+     Testing AiresDB
+      Status `C:\Users\aires\AppData\Local\Temp\jl_IBi1XC\Project.toml`
+  [e39701c5] AiresDB v0.1.0 `C:\Users\aires\Documents\Github AiresDB`
+  [cd3eb016] HTTP v2.6.7
+  [0f8b85d8] JSON3 v1.14.3
+  [2a0f44e3] Base64 v1.11.0
+  [ade2ca70] Dates v1.11.0
+  [de0858da] Printf v1.11.0
+  [9a3f8284] Random v1.11.0
+  [ea8e919c] SHA v0.7.0
+  [fa267f1f] TOML v1.0.3
+  [8dfed614] Test v1.11.0
+  [cf7118a7] UUIDs v1.11.0
+  [458c3c95] OpenSSL_jll v3.5.6+0
+      Status `C:\Users\aires\AppData\Local\Temp\jl_IBi1XC\Manifest.toml`
+  [e39701c5] AiresDB v0.1.0 `C:\Users\aires\Documents\Github AiresDB`
+  [944b1d66] CodecZlib v0.7.9
+  [4e289a0a] EnumX v1.0.7
+  [cd3eb016] HTTP v2.6.7
+  [0f8b85d8] JSON3 v1.14.3
+⌅ [69de0a69] Parsers v2.8.8
+  [aea7be01] PrecompileTools v1.3.4
+  [21216c6a] Preferences v1.5.2
+  [802f3686] Reseau v1.4.1
+  [856f2bd8] StructTypes v1.11.0
+  [3bb67fe8] TranscodingStreams v0.11.3
+  [5c2747f8] URIs v1.7.0
+  [56f22d72] Artifacts v1.11.0
+  [2a0f44e3] Base64 v1.11.0
+  [ade2ca70] Dates v1.11.0
+  [b77e0a4c] InteractiveUtils v1.11.0
+  [ac6e5ff7] JuliaSyntaxHighlighting v1.12.0
+  [8f399da3] Libdl v1.11.0
+  [56ddb016] Logging v1.11.0
+  [d6f4376e] Markdown v1.11.0
+  [a63ad114] Mmap v1.11.0
+  [ca575930] NetworkOptions v1.3.0
+  [de0858da] Printf v1.11.0
+  [9a3f8284] Random v1.11.0
+  [ea8e919c] SHA v0.7.0
+  [9e88b42a] Serialization v1.11.0
+  [f489334b] StyledStrings v1.11.0
+  [fa267f1f] TOML v1.0.3
+  [8dfed614] Test v1.11.0
+  [cf7118a7] UUIDs v1.11.0
+  [4ec0a83e] Unicode v1.11.0
+  [458c3c95] OpenSSL_jll v3.5.6+0
+  [83775a58] Zlib_jll v1.3.1+2
+        Info Packages marked with ⌅ have new versions available but compatibility constraints restrict them from upgrading.
+Precompiling for configuration --code-coverage=none --color=no --check-bounds=yes --warn-overwrite=yes --depwarn=yes --inline=yes --startup-file=no --track-allocation=none
+   7076.5 ms  ✓ AiresDB
+  1 dependency successfully precompiled in 8 seconds. 28 already precompiled.
+     Testing Running tests...
+Test Summary:  | Pass  Total     Time
+AiresDB v0.1.0 |  280    280  2m33.9s
+Test Summary:        | Pass  Total   Time
+Relational execution |  250    250  54.5s
+Test Summary:                      | Pass  Total   Time
+MVCC independent adversarial audit |   89     89  55.3s
+Test Summary:                                | Pass  Total   Time
+WAL framing, durability and process recovery | 1400   1400  41.6s
+Test Summary:                    | Pass  Total     Time
+TPC-derived workload correctness |  115    115  4m07.5s
+Test Summary:                          | Pass  Total     Time
+Independent WAL/MVCC integration audit |   82     82  1m42.3s
+Test Summary:            | Pass  Total   Time
+Source audit regressions |   23     23  12.9s
+Test Summary:                             | Pass  Total   Time
+AiresQL logical conditions and M ordering |   54     54  10.8s
+Test Summary:                  | Pass  Total  Time
+ARSP-4 page storage primitives |   55     55  9.5s
+Test Summary:            | Pass  Total  Time
+ARSP-4 rolling scheduler |   28     28  1.5s
+Test Summary:                     | Pass  Total   Time
+ARSP-4 WAL/page-store integration |   24     24  16.6s
+Test Summary:                                                    | Pass  Total  Time
+Large tables retain persistent rather than boxed logical indexes |    4      4  1.2s
+Test Summary:                           | Pass  Total     Time
+AiresDB TinyServer and mandatory client |   90     90  1m16.3s
+     Testing AiresDB tests passed 

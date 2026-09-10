@@ -1,0 +1,39 @@
+{
+  "captured_at_local": "2026-09-11T02:54:58.455614+07:00",
+  "cpu": "Intel(R) Core(TM) i5-2400S CPU @ 2.50GHz",
+  "dataset": {
+    "digest": "abb9654f1a69e5cd47b0ce546116b377ca59d3ec0b83077a7a48d1d2a8669799",
+    "profile": "SDEBO-S750",
+    "rows": 750000,
+    "seed": 1999
+  },
+  "engines": {
+    "AiresDB": {
+      "durability": "WAL fsync per commit",
+      "mode": "embedded",
+      "runtime": "Julia 1.12.7",
+      "version": "0.1.0"
+    },
+    "Firebird": {
+      "durability": "forced writes sync",
+      "mode": "embedded",
+      "runtime": "Python 3 + firebird-driver 2.0.3",
+      "version": "5.0.4.1812"
+    }
+  },
+  "firebird_distribution": {
+    "download_sha256": "01e844fce4d5f53272a76205dbc3a1ba4b782ab8e8eadcd808cdbccd9ce13b72",
+    "root": "C:\\Users\\aires\\AppData\\Local\\Temp\\sdbeo-firebird-5.0.4-run-20260911"
+  },
+  "logical_cpu": 4,
+  "os": "Windows-10-10.0.19045-SP0",
+  "physical_cpu": 4,
+  "ram_bytes": 8559091712,
+  "storage": {
+    "free_bytes_after_test": 33594142720,
+    "path": "C:",
+    "total_bytes": 126942703616,
+    "type": "SSD (host-reported)"
+  },
+  "test_window_local": "2026-09-09 through 2026-09-11"
+}

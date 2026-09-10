@@ -1,0 +1,19 @@
+AiresDB licensing notice
+
+Copyright (c) 2026 Aires Zam Wibisono. All rights reserved.
+
+Unless an individual file states otherwise, the University of Illinois/NCSA
+Open Source License (SPDX identifier: NCSA) applies to the first-party source
+code, tests, benchmarks, examples, documentation, scripts, verification
+material, and release artifacts in this distribution. The complete license
+text, redistribution conditions, warranty disclaimer, and non-endorsement
+condition are in LICENSE at the repository root.
+
+Product source files under src/ and bin/ carry short SPDX notices for easier
+machine identification. The complete license text is intentionally centralized;
+it does not need to be copied into every source file. Redistributors must keep
+the notices and license material required by LICENSE.
+
+Third-party software and tools are not relicensed by this notice. They remain
+subject to their respective licenses. Firebird is used only as an external SDEBO
+comparison engine and is not distributed as part of AiresDB.

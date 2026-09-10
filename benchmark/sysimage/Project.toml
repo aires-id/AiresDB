@@ -1,0 +1,7 @@
+[deps]
+AiresDB = "e39701c5-c21a-4d73-a911-e02c68a3ca10"
+PackageCompiler = "9b87118b-4619-50d2-8e1e-99f35a4d4d9d"
+
+[compat]
+PackageCompiler = "2"
+julia = "1.12"

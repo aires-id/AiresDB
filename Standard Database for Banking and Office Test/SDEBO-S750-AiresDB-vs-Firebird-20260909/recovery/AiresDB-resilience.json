@@ -1,0 +1,423 @@
+{
+  "engine": "AiresDB",
+  "engine_version": "0.1.0",
+  "mode": "embedded",
+  "status": true,
+  "tests": {
+    "O01": {
+      "average_cpu_percent_one_core": 87.3814886473674,
+      "correct": true,
+      "disk_growth_bytes": 1456936,
+      "duration_seconds": 900.8629999160767,
+      "end_disk_bytes": 259096624,
+      "end_rss_bytes": 951390208,
+      "errors": [],
+      "first_quarter_median_ms": 2.1944,
+      "iterations": 20298,
+      "last_quarter_median_ms": 2.019,
+      "latency_drift_ratio": 0.9200692672256654,
+      "memory_growth_ratio": 0.13897279485318637,
+      "p95_ms": 709.4182,
+      "peak_rss_bytes": 1034694656,
+      "process_cpu_seconds": 787.1875,
+      "restart_ok": true,
+      "start_disk_bytes": 257639688,
+      "start_rss_bytes": 835305472
+    },
+    "Q08": {
+      "common_families": 16,
+      "correct": true,
+      "coverage": {
+        "aggregate": true,
+        "begin_commit_rollback": true,
+        "boolean_and_or": true,
+        "comparison": true,
+        "create_open": true,
+        "delete": true,
+        "filter": true,
+        "group": true,
+        "index_lookup": true,
+        "insert": true,
+        "join_relation": true,
+        "limit": true,
+        "order": true,
+        "range": true,
+        "select_project": true,
+        "update": true
+      },
+      "passed": 16
+    },
+    "R01": {
+      "backups": [
+        {
+          "bytes": 256623128,
+          "cycle": 1,
+          "elapsed_ms": 10384.0996,
+          "method": "offline checkpoint plus documented file copy"
+        },
+        {
+          "bytes": 256623128,
+          "cycle": 2,
+          "elapsed_ms": 3237.732,
+          "method": "offline checkpoint plus documented file copy"
+        },
+        {
+          "bytes": 256623128,
+          "cycle": 3,
+          "elapsed_ms": 5328.6526,
+          "method": "offline checkpoint plus documented file copy"
+        }
+      ],
+      "grade_cap": "BC",
+      "native": false,
+      "usable": true
+    },
+    "R02": {
+      "correct": true,
+      "restores": [
+        {
+          "cycle": 1,
+          "digest": "25e82d6feca9666a56f63d447f3f17bf1e78d0a9c7ef6f3e628b95ef7f766ea1",
+          "matches": true
+        },
+        {
+          "cycle": 2,
+          "digest": "25e82d6feca9666a56f63d447f3f17bf1e78d0a9c7ef6f3e628b95ef7f766ea1",
+          "matches": true
+        },
+        {
+          "cycle": 3,
+          "digest": "25e82d6feca9666a56f63d447f3f17bf1e78d0a9c7ef6f3e628b95ef7f766ea1",
+          "matches": true
+        }
+      ],
+      "source_digest": "25e82d6feca9666a56f63d447f3f17bf1e78d0a9c7ef6f3e628b95ef7f766ea1"
+    },
+    "R03": {
+      "correct": true,
+      "deviation": "VM hard power-off unavailable on this physical host",
+      "process_kill_cycles": [
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "exitcode": 86,
+          "stage": "after_header",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "exitcode": 86,
+          "stage": "mid_payload",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "exitcode": 86,
+          "stage": "after_payload",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108917,
+            118838
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "exitcode": 86,
+          "stage": "after_commit",
+          "state": "POST_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108916,
+            118839
+          ],
+          "balances_before": [
+            108917,
+            118838
+          ],
+          "exitcode": 86,
+          "stage": "after_sync",
+          "state": "POST_COMMIT",
+          "valid_state": true
+        }
+      ],
+      "vm_power_off_cycles": 0
+    },
+    "R04": {
+      "correct": true,
+      "delayed_checkpoint": {
+        "digest": "25e82d6feca9666a56f63d447f3f17bf1e78d0a9c7ef6f3e628b95ef7f766ea1",
+        "error": null,
+        "matches": true,
+        "opened": true
+      },
+      "delayed_checkpoint_exitcode": 86,
+      "torn_tail": {
+        "digest": null,
+        "error": null,
+        "matches": true,
+        "opened": true,
+        "valid_transfer_state": true
+      },
+      "unclean_shutdown_cycles": [
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "exitcode": 86,
+          "stage": "after_header",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "exitcode": 86,
+          "stage": "mid_payload",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "exitcode": 86,
+          "stage": "after_payload",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108917,
+            118838
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "exitcode": 86,
+          "stage": "after_commit",
+          "state": "POST_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108916,
+            118839
+          ],
+          "balances_before": [
+            108917,
+            118838
+          ],
+          "exitcode": 86,
+          "stage": "after_sync",
+          "state": "POST_COMMIT",
+          "valid_state": true
+        }
+      ]
+    },
+    "R05": {
+      "cases": [
+        {
+          "case": "wal_header",
+          "detected_or_recovered": true,
+          "digest": null,
+          "error": "Storage Error:\nChecksum header WAL gagal.",
+          "file": "sdbeo.aires",
+          "matches": false,
+          "opened": false
+        },
+        {
+          "case": "wal_payload",
+          "detected_or_recovered": true,
+          "digest": null,
+          "error": "Storage Error:\nChecksum header record WAL gagal.",
+          "file": "sdbeo.aires",
+          "matches": false,
+          "opened": false
+        },
+        {
+          "case": "page_index",
+          "detected_or_recovered": true,
+          "digest": null,
+          "error": "Storage Error:\nChecksum page gagal.",
+          "file": "sdbeo.aires.pages",
+          "matches": false,
+          "opened": false
+        }
+      ],
+      "correct": true,
+      "silent_mismatches": 0
+    },
+    "S01": {
+      "controls": {
+        "authentication": false,
+        "credentials_absent_logs": true,
+        "credentials_not_plaintext": true,
+        "remote_bind_restricted": true,
+        "roles_permissions": false,
+        "session_token_hygiene": true,
+        "transport_or_secure_deployment": true,
+        "unauthenticated_query_rejected": false
+      },
+      "mode_note": "Embedded API has no network listener; server authentication controls are outside this profile",
+      "passed": 5,
+      "total": 8
+    },
+    "T03": {
+      "correct": true,
+      "crash_cycles": [
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "exitcode": 86,
+          "stage": "after_header",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "exitcode": 86,
+          "stage": "mid_payload",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108918,
+            118837
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "exitcode": 86,
+          "stage": "after_payload",
+          "state": "PRE_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108917,
+            118838
+          ],
+          "balances_before": [
+            108918,
+            118837
+          ],
+          "exitcode": 86,
+          "stage": "after_commit",
+          "state": "POST_COMMIT",
+          "valid_state": true
+        },
+        {
+          "balances_after": [
+            108916,
+            118839
+          ],
+          "balances_before": [
+            108917,
+            118838
+          ],
+          "exitcode": 86,
+          "stage": "after_sync",
+          "state": "POST_COMMIT",
+          "valid_state": true
+        }
+      ],
+      "normal_correct": true,
+      "normal_elapsed_ms": 9937.1146,
+      "normal_transfers": 1000
+    },
+    "T04": {
+      "after": [
+        [
+          108916,
+          118839
+        ],
+        100
+      ],
+      "after_reopen": [
+        [
+          108916,
+          118839
+        ],
+        100
+      ],
+      "before": [
+        [
+          108916,
+          118839
+        ],
+        100
+      ],
+      "correct": true,
+      "cycles": 200
+    },
+    "T05": {
+      "attempted": 1000,
+      "committed": 1000,
+      "correct": true,
+      "final_value": 1000,
+      "lost_updates": 0,
+      "retries": 2479,
+      "workers": 4
+    }
+  }
+}

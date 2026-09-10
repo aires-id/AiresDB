@@ -1,0 +1,461 @@
+{
+  "deviations": [
+    "VM hard power-off cycles unavailable on this physical host; five external process-termination cycles were run per engine.",
+    "Both engines were tested through embedded APIs on the same host; S01 server/network gate is not applicable.",
+    "AiresDB R01 uses an offline checkpoint plus file copy because v0.1.0 has no native backup facility; its grade is capped at BC.",
+    "An unscored first AiresDB T05 attempt exposed cross-Engine Session teardown interference: closing one worker while others committed closed the shared page manager. The scored rerun retained all workers until measurement ended.",
+    "The first AiresDB O01 attempt was invalidated because the harness called update_key! with an incorrect do-block argument order. O01 was rerun for the full duration with zero errors; both records are retained."
+  ],
+  "engines": [
+    {
+      "class": "Excellent",
+      "engine": "AiresDB",
+      "grades": {
+        "O01": {
+          "correct": true,
+          "evidence": "memory growth 13.90%; 900.9s; 0 errors",
+          "grade": "B",
+          "points": 3.0
+        },
+        "Q01": {
+          "correct": true,
+          "grade": "A",
+          "median": 23102.8576340459,
+          "metric": "throughput_rows_s",
+          "pfr": 23.1028576340459,
+          "points": 4.0,
+          "run_values": [
+            22469.665771451215,
+            26167.08861155202,
+            23102.8576340459,
+            22604.52610908512,
+            23566.61278123995
+          ],
+          "target_b": 1000.0
+        },
+        "Q02": {
+          "correct": true,
+          "grade": "A",
+          "median": 2.5221,
+          "metric": "p95_ms",
+          "pfr": 1.9824749216922406,
+          "points": 4.0,
+          "run_values": [
+            3.1315,
+            2.4742,
+            2.5277,
+            2.5221,
+            2.3757
+          ],
+          "target_b": 5.0
+        },
+        "Q03": {
+          "correct": true,
+          "grade": "A",
+          "median": 2.5378,
+          "metric": "p95_ms",
+          "pfr": 5.910631255418079,
+          "points": 4.0,
+          "run_values": [
+            2.6196,
+            2.5378,
+            2.8081,
+            2.4339,
+            2.4226
+          ],
+          "target_b": 15.0
+        },
+        "Q04": {
+          "correct": true,
+          "grade": "A",
+          "median": 2.47,
+          "metric": "p95_ms",
+          "pfr": 10.121457489878543,
+          "points": 4.0,
+          "run_values": [
+            2.9368,
+            2.0743,
+            1.8393,
+            2.6327,
+            2.47
+          ],
+          "target_b": 25.0
+        },
+        "Q05": {
+          "correct": true,
+          "grade": "AB",
+          "median": 1094.064,
+          "metric": "p50_ms",
+          "pfr": 1.371034966875795,
+          "points": 3.5,
+          "run_values": [
+            1252.1979,
+            1065.2155,
+            1094.064,
+            993.0614,
+            1164.4449
+          ],
+          "target_b": 1500.0
+        },
+        "Q06": {
+          "correct": true,
+          "grade": "A",
+          "median": 27.8837,
+          "metric": "p50_ms",
+          "pfr": 71.72649253865161,
+          "points": 4.0,
+          "run_values": [
+            33.8495,
+            27.4843,
+            420.9892,
+            27.8837,
+            25.589
+          ],
+          "target_b": 2000.0
+        },
+        "Q07": {
+          "correct": true,
+          "grade": "A",
+          "median": 159818.50754573496,
+          "metric": "throughput_rows_s",
+          "pfr": 3.1963701509146993,
+          "points": 4.0,
+          "run_values": [
+            146530.61943386958,
+            164985.4538924721,
+            159790.33462780548,
+            159818.50754573496,
+            167073.2449774274
+          ],
+          "target_b": 50000.0
+        },
+        "Q08": {
+          "correct": true,
+          "evidence": "16/16 controls/families",
+          "grade": "A",
+          "points": 4.0
+        },
+        "R01": {
+          "correct": true,
+          "evidence": "3 usable offline copies; non-native cap",
+          "grade": "BC",
+          "points": 2.5
+        },
+        "R02": {
+          "correct": true,
+          "evidence": "3 manually orchestrated restores match",
+          "grade": "B",
+          "points": 3.0
+        },
+        "R03": {
+          "correct": true,
+          "evidence": "5 process-kill cycles valid; VM unavailable",
+          "grade": "A",
+          "points": 4.0
+        },
+        "R04": {
+          "correct": true,
+          "evidence": "reopen, recovery, and index checks passed",
+          "grade": "A",
+          "points": 4.0
+        },
+        "R05": {
+          "correct": true,
+          "evidence": "3 corruptions detected or safely recovered; no silent mismatch",
+          "grade": "A",
+          "points": 4.0
+        },
+        "S01": {
+          "correct": true,
+          "evidence": "5/8 controls/families",
+          "grade": "C",
+          "points": 2.0
+        },
+        "T01": {
+          "correct": true,
+          "grade": "A",
+          "median": 3.6527,
+          "metric": "p95_ms",
+          "pfr": 2.737700878801982,
+          "points": 4.0,
+          "run_values": [
+            3.9477,
+            3.6527,
+            3.5403,
+            3.6972,
+            3.5643
+          ],
+          "target_b": 10.0
+        },
+        "T02": {
+          "correct": true,
+          "grade": "A",
+          "median": 3.4907,
+          "metric": "p95_ms",
+          "pfr": 4.2971323803248636,
+          "points": 4.0,
+          "run_values": [
+            3.3425,
+            3.432,
+            3.6661,
+            3.8595,
+            3.4907
+          ],
+          "target_b": 15.0
+        },
+        "T03": {
+          "correct": true,
+          "evidence": "1000 transfers plus 5 crash boundaries",
+          "grade": "A",
+          "points": 4.0
+        },
+        "T04": {
+          "correct": true,
+          "evidence": "200 rollback cycles preserved state",
+          "grade": "A",
+          "points": 4.0
+        },
+        "T05": {
+          "correct": true,
+          "evidence": "4 workers; 0 lost updates",
+          "grade": "A",
+          "points": 4.0
+        }
+      },
+      "medium_office": "PASS",
+      "mode": "embedded",
+      "resilience_status": true,
+      "score": 3.735294117647059,
+      "small_bank_technical": "PASS",
+      "version": "0.1.0"
+    },
+    {
+      "class": "Excellent",
+      "engine": "Firebird",
+      "grades": {
+        "O01": {
+          "correct": true,
+          "evidence": "memory growth 0.00%; 900.6s; 0 errors",
+          "grade": "A",
+          "points": 4.0
+        },
+        "Q01": {
+          "correct": true,
+          "grade": "A",
+          "median": 1808.662875017005,
+          "metric": "throughput_rows_s",
+          "pfr": 1.808662875017005,
+          "points": 4.0,
+          "run_values": [
+            1857.1234554380671,
+            1823.988545188507,
+            1750.1123947264837,
+            1808.662875017005,
+            1800.0810791079587
+          ],
+          "target_b": 1000.0
+        },
+        "Q02": {
+          "correct": true,
+          "grade": "A",
+          "median": 0.4062,
+          "metric": "p95_ms",
+          "pfr": 12.309207287050715,
+          "points": 4.0,
+          "run_values": [
+            0.5042,
+            0.5365,
+            0.39,
+            0.4062,
+            0.3765
+          ],
+          "target_b": 5.0
+        },
+        "Q03": {
+          "correct": true,
+          "grade": "A",
+          "median": 0.3107,
+          "metric": "p95_ms",
+          "pfr": 48.2780817508851,
+          "points": 4.0,
+          "run_values": [
+            0.3925,
+            0.3154,
+            0.31,
+            0.2953,
+            0.3107
+          ],
+          "target_b": 15.0
+        },
+        "Q04": {
+          "correct": true,
+          "grade": "A",
+          "median": 3.8637,
+          "metric": "p95_ms",
+          "pfr": 6.470481662654968,
+          "points": 4.0,
+          "run_values": [
+            4.6767,
+            4.0655,
+            3.8637,
+            3.4324,
+            3.7583
+          ],
+          "target_b": 25.0
+        },
+        "Q05": {
+          "correct": true,
+          "grade": "A",
+          "median": 995.9056,
+          "metric": "p50_ms",
+          "pfr": 1.5061668495487925,
+          "points": 4.0,
+          "run_values": [
+            995.9056,
+            1093.5452,
+            992.3192,
+            995.4271,
+            1018.7123
+          ],
+          "target_b": 1500.0
+        },
+        "Q06": {
+          "correct": true,
+          "grade": "A",
+          "median": 5.489,
+          "metric": "p50_ms",
+          "pfr": 364.3650938240117,
+          "points": 4.0,
+          "run_values": [
+            5.4731,
+            10.9358,
+            5.799,
+            5.489,
+            5.4174
+          ],
+          "target_b": 2000.0
+        },
+        "Q07": {
+          "correct": true,
+          "grade": "BC",
+          "median": 41399.76239848365,
+          "metric": "throughput_rows_s",
+          "pfr": 0.8279952479696729,
+          "points": 2.5,
+          "run_values": [
+            42747.12592263687,
+            38286.89514544912,
+            41399.76239848365,
+            41623.104272594166,
+            41158.99312392922
+          ],
+          "target_b": 50000.0
+        },
+        "Q08": {
+          "correct": true,
+          "evidence": "16/16 controls/families",
+          "grade": "A",
+          "points": 4.0
+        },
+        "R01": {
+          "correct": true,
+          "evidence": "3 native gbak backups usable",
+          "grade": "A",
+          "points": 4.0
+        },
+        "R02": {
+          "correct": true,
+          "evidence": "3 automated native restores match",
+          "grade": "A",
+          "points": 4.0
+        },
+        "R03": {
+          "correct": true,
+          "evidence": "5 process-kill cycles valid; VM unavailable",
+          "grade": "A",
+          "points": 4.0
+        },
+        "R04": {
+          "correct": true,
+          "evidence": "reopen, recovery, and index checks passed",
+          "grade": "A",
+          "points": 4.0
+        },
+        "R05": {
+          "correct": true,
+          "evidence": "3 corruptions detected or safely recovered; no silent mismatch",
+          "grade": "A",
+          "points": 4.0
+        },
+        "S01": {
+          "correct": true,
+          "evidence": "7/8 controls/families",
+          "grade": "AB",
+          "points": 3.5
+        },
+        "T01": {
+          "correct": true,
+          "grade": "A",
+          "median": 1.9083,
+          "metric": "p95_ms",
+          "pfr": 5.24026620552324,
+          "points": 4.0,
+          "run_values": [
+            2.1919,
+            2.1412,
+            1.9083,
+            1.6593,
+            1.8975
+          ],
+          "target_b": 10.0
+        },
+        "T02": {
+          "correct": true,
+          "grade": "A",
+          "median": 1.6259,
+          "metric": "p95_ms",
+          "pfr": 9.225659634663879,
+          "points": 4.0,
+          "run_values": [
+            2.1813,
+            1.4937,
+            1.6259,
+            1.8041,
+            1.551
+          ],
+          "target_b": 15.0
+        },
+        "T03": {
+          "correct": true,
+          "evidence": "1000 transfers plus 5 crash boundaries",
+          "grade": "A",
+          "points": 4.0
+        },
+        "T04": {
+          "correct": true,
+          "evidence": "200 rollback cycles preserved state",
+          "grade": "A",
+          "points": 4.0
+        },
+        "T05": {
+          "correct": true,
+          "evidence": "4 workers; 0 lost updates",
+          "grade": "A",
+          "points": 4.0
+        }
+      },
+      "medium_office": "PASS",
+      "mode": "embedded",
+      "resilience_status": true,
+      "score": 3.9338235294117645,
+      "small_bank_technical": "PASS",
+      "version": "5.0.4.1812"
+    }
+  ],
+  "logical_source_sha256": "abb9654f1a69e5cd47b0ce546116b377ca59d3ec0b83077a7a48d1d2a8669799",
+  "profile": "SDEBO-S750",
+  "seed": 1999,
+  "standard": "SDEBO 1.0",
+  "total_rows": 750000,
+  "total_weight": 68
+}
