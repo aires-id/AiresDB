@@ -66,39 +66,134 @@ function _filter_source_rows(rows::Vector{Row},parts::Vector{ExprNode},schema::V
     filtered
 end
 
+"""Choose the hash build side after source predicates have reduced both inputs.
+
+Ties keep the right side as the build side because that is the legacy path and
+also preserves the lowest-overhead left-major output construction.
+"""
+function _join_build_side(left_rows::AbstractVector,right_rows::AbstractVector)::Symbol
+    length(left_rows) < length(right_rows) ? :left : :right
+end
+
+@inline function _join_hash_key(value,floating::Bool)
+    value_key(isnumber(value) ? (floating ? (value isa Float64 ? value : Float64(exact(value))) : exact(value)) : value)
+end
+
+function _hash_join_preserve_left(leftrows::Vector{Row},rightrows::Vector{Row},left_column::Int,
+                                  right_column::Int,floating::Bool)
+    build_side = _join_build_side(leftrows,rightrows)
+    if build_side === :right
+        buckets = Dict{Any,Vector{Row}}()
+        for row in rightrows
+            _query_budget_tick!()
+            value = row[right_column]
+            value === nothing && continue
+            _query_budget_work!()
+            push!(get!(buckets,_join_hash_key(value,floating),Row[]),row)
+        end
+        rows = Row[]
+        for left in leftrows
+            _query_budget_tick!()
+            value = left[left_column]
+            value === nothing && continue
+            for right in get(buckets,_join_hash_key(value,floating),Row[])
+                _query_budget_work!()
+                push!(rows,vcat(left,right))
+            end
+        end
+        return rows
+    end
+
+    # Build only the smaller left-side key set, then retain matching right rows
+    # by key. A final left-major pass preserves the observable no-M: order.
+    left_keys = Set{Any}()
+    for left in leftrows
+        _query_budget_tick!()
+        value = left[left_column]
+        value === nothing && continue
+        key = _join_hash_key(value,floating)
+        if !(key in left_keys)
+            _query_budget_work!()
+            push!(left_keys,key)
+        end
+    end
+    matches = Dict{Any,Vector{Row}}()
+    for right in rightrows
+        _query_budget_tick!()
+        value = right[right_column]
+        value === nothing && continue
+        key = _join_hash_key(value,floating)
+        key in left_keys || continue
+        _query_budget_work!()
+        push!(get!(matches,key,Row[]),right)
+    end
+    rows = Row[]
+    for left in leftrows
+        _query_budget_tick!()
+        value = left[left_column]
+        value === nothing && continue
+        for right in get(matches,_join_hash_key(value,floating),Row[])
+            _query_budget_work!()
+            push!(rows,vcat(left,right))
+        end
+    end
+    rows
+end
+
+"""Use a unique logical index when probing the right table is cheaper.
+
+This path is limited to same-kind, source-local table columns so the index key
+has exactly the same representation as the catalog key. Nullable keys retain
+normal SQL NULL-never-matches semantics. Returning `nothing` means the planner
+should use the hash plan instead; an empty `Row[]` is a valid indexed result.
+"""
+function _join_index_nested_loop_right(leftrows::Vector{Row},rightrows::Vector{Row},
+                                        right_table,left_column::Int,right_column::Int,
+                                        left_kind::Symbol,right_kind::Symbol)
+    right_table === nothing && return nothing
+    left_kind == right_kind || return nothing
+    length(leftrows) < length(rightrows) || return nothing
+    spec = (right_column,)
+    haskey(right_table.indexes,spec) || return nothing
+    rows = Row[]
+    for left in leftrows
+        _query_budget_tick!()
+        value = left[left_column]
+        value === nothing && continue
+        id = logical_index_get(right_table,spec,(value_key(value),))
+        iszero(id) && continue
+        position = get(right_table.positions,id,0)
+        position == 0 && continue
+        right = table_row(right_table,position)
+        _query_budget_work!()
+        push!(rows,vcat(left,right))
+    end
+    rows
+end
+
 function join_rows(db::Database,q::SelectQuery,schema::Vector{BoundColumn},stack::Set{String})
-    leftrows = source_rows(db,q.sources[1],stack)
-    length(q.sources) == 1 && return leftrows
-    rightrows = source_rows(db,q.sources[2],stack)
+    length(q.sources) == 1 && return source_rows(db,q.sources[1],stack),q.condition
     leftschema = BoundColumn[c for c in schema if c.source == q.sources[1]]
     rightschema = BoundColumn[c for c in schema if c.source == q.sources[2]]
-    leftfilters,rightfilters,_ = _push_join_filters(q.condition,schema,q.sources[1],q.sources[2])
-    leftrows = _filter_source_rows(leftrows,leftfilters,leftschema)
-    rightrows = _filter_source_rows(rightrows,rightfilters,rightschema)
+    leftfilters,rightfilters,residual = _push_join_filters(q.condition,schema,q.sources[1],q.sources[2])
+    residual_condition = isempty(residual) ? nothing :
+        reduce((left,right)->LogicalAnd(left,right),residual)
+    # Predicate pushdown is deliberately performed before the join build side
+    # is selected. This makes the cost decision reflect the actual candidates,
+    # not the unfiltered table cardinalities.
+    leftrows = _filter_source_rows(source_rows(db,q.sources[1],stack),leftfilters,leftschema)
+    rightrows = _filter_source_rows(source_rows(db,q.sources[2],stack),rightfilters,rightschema)
     nleft = count(c->c.source == q.sources[1],schema)
     condition = q.join_condition::BinaryExpr
     i = resolve_column(condition.left,schema); j = resolve_column(condition.right,schema)
     i > nleft && ((i,j) = (j,i))
     j -= nleft
     floating = any(r->r[i] isa Float64,leftrows) || any(r->r[j] isa Float64,rightrows)
-    key(v) = value_key(isnumber(v) ? (floating ? (v isa Float64 ? v : Float64(exact(v))) : exact(v)) : v)
-    buckets = Dict{Any,Vector{Row}}()
-    for r in rightrows
-        _query_budget_tick!()
-        r[j] === nothing && continue
-        _query_budget_work!()
-        push!(get!(buckets,key(r[j]),Row[]),r)
-    end
-    rows = Row[]
-    for l in leftrows
-        _query_budget_tick!()
-        l[i] === nothing && continue
-        for r in get(buckets,key(l[i]),Row[])
-            _query_budget_work!()
-            push!(rows,vcat(l,r))
-        end
-    end
-    rows
+    indexed = _join_index_nested_loop_right(leftrows,rightrows,
+        get(db.tables,q.sources[2],nothing),i,j,
+        schema[i].kind,schema[nleft+j].kind)
+    indexed === nothing || return indexed,residual_condition
+    _hash_join_preserve_left(leftrows,rightrows,i,j,floating),residual_condition
 end
 
 function query_order_permutation(keys::AbstractVector, orders::Vector{OrderByItem})
@@ -131,8 +226,11 @@ function select_rows(db::Database,q::SelectQuery,stack::Set{String}=Set{String}(
     schema,exprs,labels = validate_query(db,q,stack)
     bound = [bind_expression(e,schema) for e in exprs]
     bound_orders = ExprNode[bind_expression(item.expression,schema) for item in q.orders]
-    condition = bind_condition(q.condition,schema)
-    input = join_rows(db,q,schema,stack)
+    input,residual_condition = join_rows(db,q,schema,stack)
+    # Source-local predicates were already evaluated before the hash join.
+    # Only retain cross-source residual predicates here; this avoids evaluating
+    # pushed filters once per joined pair.
+    condition = bind_condition(residual_condition,schema)
     rows = if condition === nothing
         input
     else
