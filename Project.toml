@@ -11,6 +11,7 @@ JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 OpenSSL_jll = "458c3c95-2e84-50aa-8efc-19380b2a3a95"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 
@@ -22,12 +23,12 @@ JSON3 = "1.14.3"
 OpenSSL_jll = "3.5.6"
 Random = "1.11.0"
 SHA = "0.7.0"
+Serialization = "1.11.0"
 TOML = "1.0.3"
 UUIDs = "1.11.0"
 julia = "1.12"
 
-[apps]
-airesdb = {}
+[apps.airesdb]
 
 [extras]
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"

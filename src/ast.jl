@@ -69,6 +69,10 @@ struct SelectQuery <: Statement
     orders::Vector{OrderByItem}
     limit::Union{Nothing,Int}
 end
+"""Diagnostic query that returns the optimizer's planned operators."""
+struct ExplainQuery <: Statement
+    query::SelectQuery
+end
 """Compatibility constructor for queries created before the `M:` clause existed."""
 SelectQuery(expressions, labels, sources, condition, join_condition, groups, limit) =
     SelectQuery(expressions, labels, sources, condition, join_condition, groups, OrderByItem[], limit)

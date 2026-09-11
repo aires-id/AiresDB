@@ -23,3 +23,13 @@ aktif serta satu proses AiresDB.
 
 Jika server tidak tersedia, CLI mencetak `ERROR A1000`, keluar non-zero, dan tidak
 membuka file database lokal.
+
+Untuk query analitik besar, mode server menyediakan batas external hash spill:
+
+```sh
+airesdb server --max-query-memory-bytes 67108864 --max-query-spill-bytes 1073741824
+```
+
+Saat memory query melewati batas pertama, hash join mempartisi input ke run
+sementara. Batas kedua mencegah penggunaan disk tanpa batas; run dibersihkan
+setelah query selesai atau gagal.

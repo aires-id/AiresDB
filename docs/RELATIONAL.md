@@ -34,6 +34,9 @@ diakses dengan `row.Nama`; perubahan koleksi hasil tidak mengubah tabel sumber.
 `relation(session, "T"; prefix="t_")` menambahkan awalan pada nama kolom hasil.
 Awalan ini berguna ketika tabel yang sama bergabung lebih dari sekali.
 
+`table_stats(session, "T")` mengembalikan statistik lazy untuk snapshot aktif:
+jumlah row, jumlah NULL, distinct count, serta nilai minimum dan maksimum.
+
 ## Operator
 
 | API | Perilaku |
@@ -103,11 +106,12 @@ disamakan dengan angka 1 atau 0. Nilai Float64 dibandingkan berdasarkan nilai
 biner sebenarnya; karena itu `0.1` Float64 tidak identik dengan desimal eksak
 `0.1`. Gunakan satu domain angka yang konsisten untuk kunci aplikasi.
 
-Operator menghasilkan relasi di memori. Belum ada spilling ke disk, optimizer
-berbasis biaya, parallel hash aggregation, atau batas memori per query. API
-ini mengeksekusi rencana yang ditulis aplikasi; tidak mengklaim dukungan penuh
-SQL TPC-H di parser AiresQL. Pengujian analitis dan benchmark menggunakan
-operator engine yang sama, bukan hasil jawaban yang ditanam langsung.
+Operator Julia ini tetap menghasilkan relasi di memori. Optimizer AiresQL pada
+jalur server sekarang memiliki join order greedy untuk multi-join, statistik
+tabel lazy, dan external hash join yang spill ke run sementara saat budget
+memori query terlampaui. API callback relational belum menjadi executor
+streaming penuh dan belum melakukan parallel hash aggregation atau spilling
+untuk setiap operator.
 
 ## Verifikasi
 

@@ -10,6 +10,8 @@ const DEFAULT_IDLE_TIMEOUT = 600.0
 const DEFAULT_MAX_RESULT_ROWS = 100_000
 const DEFAULT_MAX_QUERY_SECONDS = 30.0
 const DEFAULT_MAX_RESPONSE_BODY = 64 * 1024 * 1024
+const DEFAULT_MAX_QUERY_MEMORY_BYTES = 64 * 1024 * 1024
+const DEFAULT_MAX_QUERY_SPILL_BYTES = 1024 * 1024 * 1024
 const ROOT_CREDENTIAL_FILE = ".airesdb-auth.toml"
 const PASSWORD_ITERATIONS = 210_000
 const PASSWORD_SALT_BYTES = 16
@@ -25,6 +27,8 @@ Base.@kwdef struct TinyServerConfig
     max_result_rows::Int = DEFAULT_MAX_RESULT_ROWS
     max_query_seconds::Float64 = DEFAULT_MAX_QUERY_SECONDS
     max_response_body::Int = DEFAULT_MAX_RESPONSE_BODY
+    max_query_memory_bytes::Int = DEFAULT_MAX_QUERY_MEMORY_BYTES
+    max_query_spill_bytes::Int = DEFAULT_MAX_QUERY_SPILL_BYTES
     allow_insecure_network::Bool = false
     verbose::Bool = false
 end
@@ -309,13 +313,20 @@ function _execute_server_query(entry::ServerSession, query::String, config::Tiny
         deadline = UInt64(time_ns()) + UInt64(round(config.max_query_seconds * 1_000_000_000))
         intermediate_limit = config.max_result_rows > typemax(Int) ÷ 4 ? typemax(Int) :
             max(config.max_result_rows * 4,config.max_result_rows + 1024)
-        budget = QueryBudget(deadline,config.max_result_rows,intermediate_limit,0,0,0,0)
-        _with_query_budget(() -> begin
-            started = time_ns()
-            result = startswith(stripped, ".") ? _server_command(entry.session, stripped) : execute!(entry.session, query)
-            elapsed = (time_ns() - started) / 1_000_000
-            result isa QueryResult ? _result_payload(result, elapsed, entry.session) : _command_payload(String(result), elapsed, entry.session)
-        end,budget)
+        spill_directory = mktempdir()
+        budget = QueryBudget(deadline,config.max_result_rows,intermediate_limit,
+            config.max_query_memory_bytes,config.max_query_spill_bytes,spill_directory,
+            0,0,0,0,0,0)
+        try
+            _with_query_budget(() -> begin
+                started = time_ns()
+                result = startswith(stripped, ".") ? _server_command(entry.session, stripped) : execute!(entry.session, query)
+                elapsed = (time_ns() - started) / 1_000_000
+                result isa QueryResult ? _result_payload(result, elapsed, entry.session) : _command_payload(String(result), elapsed, entry.session)
+            end,budget)
+        finally
+            isdir(spill_directory) && rm(spill_directory; recursive=true, force=true)
+        end
     end
 end
 
@@ -405,6 +416,9 @@ function start_tinyserver(config::TinyServerConfig=TinyServerConfig(); password=
     isfinite(config.max_query_seconds) && config.max_query_seconds > 0 ||
         throw(ArgumentError("max_query_seconds must be finite and positive"))
     config.max_response_body > 0 || throw(ArgumentError("max_response_body must be positive"))
+    config.max_query_memory_bytes > 0 || throw(ArgumentError("max_query_memory_bytes must be positive"))
+    config.max_query_spill_bytes >= config.max_query_memory_bytes ||
+        throw(ArgumentError("max_query_spill_bytes must be at least max_query_memory_bytes"))
     loopback = lowercase(strip(config.host)) in ("127.0.0.1", "localhost", "::1")
     loopback || config.allow_insecure_network ||
         throw(AiresError("Network Security", "Binding ke alamat non-loopback membutuhkan allow_insecure_network=true dan TLS reverse proxy."))

@@ -6,6 +6,14 @@ table_columns(s::Session,name::String) = with_snapshot(s) do
     getfield.(get_table(active_database(s),name).columns,:name)
 end
 
+"""Return lazily maintained cardinality, NULL, distinct, and range statistics."""
+function table_stats(session::Session,name::String)
+    with_snapshot(session) do
+        record_read!(session,name)
+        table_statistics(get_table(active_database(session),name))
+    end
+end
+
 """Read one primary-key row from a pinned MVCC snapshot; caller owns returned data."""
 function _lookup_snapshot_info(session::Session,name::String,key)
     with_snapshot(session) do

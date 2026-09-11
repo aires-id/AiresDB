@@ -5,8 +5,13 @@ mutable struct QueryBudget
     deadline_ns::UInt64
     max_result_rows::Int
     max_intermediate_rows::Int
+    max_memory_bytes::Int
+    max_spill_bytes::Int
+    spill_directory::String
     emitted_rows::Int
     intermediate_rows::Int
+    spill_bytes::Int
+    spill_runs::Int
     ticks::UInt64
     query_depth::Int
 end

@@ -215,7 +215,10 @@ end
 
 function parse_statement!(p::Parser)::Statement
     word = lowercase(peek(p).text)
-    if word == "buat"
+    if word == "explain"
+        take_token!(p)
+        return ExplainQuery(parse_select!(p))
+    elseif word == "buat"
         take_token!(p)
         if isword(p, "tabel")
             take_token!(p); name = quoted!(p); keyword!(p, "isi")
