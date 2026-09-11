@@ -15,7 +15,7 @@ bukan fitur yang sudah tersedia.
 | Concurrency | shared Engine, multiprocess advisory lock, incremental refresh | stress lebih panjang, fairness/backoff, cancellation |
 | Storage | page manager 8 KiB, slotted heap, RID, bounded Clock buffer pool, WAL page-LSN guard, scheduler 4 lane, async P2 cache miss, offline physical PageStore compact/rebuild | multi-page catalog, online vacuum/free-space map, physical snapshot history tanpa fallback legacy, async P3 traversal |
 | Index | hash compatibility index plus persistent B+Tree untuk primary/unique current snapshot dan `M:` yang eligible, bottom-up bulk load, unique-index join probe | secondary index umum, delete rebalance, B-link/latch coupling |
-| Analitik | generic relational API, predicate pushdown aman, cardinality-aware hash join, dan 22 query TPC-H-derived | statistik, spilling, parallel execution |
+| Analitik | generic relational API, predicate pushdown aman, multi-join greedy order, statistik tabel, spillable hash join, dan 22 query TPC-H-derived | parallel execution, projection pushdown |
 | AiresQL query | kondisi `&:`/`O:`, pengurutan stabil `M:` dengan `Atas`/`Bawah`, serta Limit setelah urut | alias, IS NULL, HAVING, foreign key, prepared query |
 | Benchmark | 5 transaksi C-derived, 22 query H-derived, report reproducible | skala lebih besar, long-running soak, profile disk/RAM |
 
@@ -32,9 +32,11 @@ bukan fitur yang sudah tersedia.
    dan sidecar replacement detection sudah tersedia sebagai baseline maintenance.
 4. **B+Tree concurrency.** Tambahkan delete rebalance, root shrink, secondary
    index umum, dan protocol B-link atau latch coupling.
-5. **Planner dan optimizer.** Statistik yang lebih akurat, projection pushdown,
-   pilihan scan/index/join berbasis cost, dan `EXPLAIN`. Predicate pushdown serta
-   cardinality-aware hash build sudah tersedia untuk equality join dua sumber.
+5. **Planner dan optimizer.** Statistik lazy, greedy join order multi-sumber,
+   spillable hash join, dan `EXPLAIN` sudah tersedia. Projection pushdown,
+   pilihan scan/index yang lebih luas, dan parallel execution menjadi langkah
+   berikutnya. Predicate pushdown serta cardinality-aware hash build tetap
+   tersedia untuk equality join.
 6. **AiresQL berikutnya.** Alias, IS NULL, HAVING, foreign key, prepared query
    bertipe, bulk import, dan CSV.
 7. **Operational tooling.** inspect WAL, maintenance scheduling, metrics, dan

@@ -27,6 +27,9 @@ mutable struct Table
     # Sparse changes layered over immutable logical indexes. Zero is a
     # tombstone. Small transactions therefore copy only keys they modify.
     index_overrides::Dict{Tuple,Dict{Tuple,UInt128}}
+    # Derived, non-durable optimizer statistics. They are invalidated on every
+    # logical row/schema mutation and rebuilt lazily for the current snapshot.
+    statistics::Any
 end
 const LOGICAL_INDEX_ROW_LIMIT = 100_000
 const TABLE_SHARED_ROWS = UInt8(0x01)
@@ -45,7 +48,7 @@ Table(name::String,columns::Vector{ColumnDef},rows::Vector{Row},next_ids::Dict{S
       indexes::Dict{Tuple,Dict{Tuple,UInt128}},changes::Dict{UInt128,Union{Nothing,Row}},
       statement_changes::Vector{UInt128}) =
     Table(name,columns,rows,next_ids,row_ids,row_stamps,positions,indexes,changes,statement_changes,UInt8(0),
-        Dict{Int,Row}(),Dict{Int,UInt64}(),Dict{Tuple,Dict{Tuple,UInt128}}())
+        Dict{Int,Row}(),Dict{Int,UInt64}(),Dict{Tuple,Dict{Tuple,UInt128}}(),nothing)
 
 # Compatibility constructor for callers that already provide the COW flags.
 Table(name::String,columns::Vector{ColumnDef},rows::Vector{Row},next_ids::Dict{String,Int128},
@@ -53,7 +56,7 @@ Table(name::String,columns::Vector{ColumnDef},rows::Vector{Row},next_ids::Dict{S
       indexes::Dict{Tuple,Dict{Tuple,UInt128}},changes::Dict{UInt128,Union{Nothing,Row}},
       statement_changes::Vector{UInt128},shared_fields::UInt8) =
     Table(name,columns,rows,next_ids,row_ids,row_stamps,positions,indexes,changes,statement_changes,
-        shared_fields,Dict{Int,Row}(),Dict{Int,UInt64}(),Dict{Tuple,Dict{Tuple,UInt128}}())
+        shared_fields,Dict{Int,Row}(),Dict{Int,UInt64}(),Dict{Tuple,Dict{Tuple,UInt128}}(),nothing)
 
 function Table(name::String,columns::Vector{ColumnDef},rows::Vector{Row},next_ids::Dict{String,Int128})
     ids = UInt128[uuid4().value for _ in rows]
@@ -174,7 +177,7 @@ function copy_table(table::Table)
     Table(table.name,copy(table.columns),rows,copy(table.next_ids),copy(table.row_ids),
           stamps,copy(table.positions),Dict(k=>copy(v) for (k,v) in table.indexes),
           copy(table.changes),UInt128[],UInt8(0),Dict{Int,Row}(),Dict{Int,UInt64}(),
-          Dict(k=>copy(v) for (k,v) in table.index_overrides))
+          Dict(k=>copy(v) for (k,v) in table.index_overrides),table.statistics)
 end
 
 """Create an isolated table shell without copying its large immutable fields."""
@@ -182,7 +185,7 @@ function copy_table_for_mutation(table::Table)
     Table(table.name,table.columns,table.rows,table.next_ids,table.row_ids,table.row_stamps,
           table.positions,table.indexes,copy(table.changes),copy(table.statement_changes),TABLE_SHARED_ALL,
           copy(table.row_overrides),copy(table.row_stamp_overrides),
-          Dict(k=>copy(v) for (k,v) in table.index_overrides))
+          Dict(k=>copy(v) for (k,v) in table.index_overrides),nothing)
 end
 
 """Return a row as seen by a logical snapshot, including sparse replacements."""

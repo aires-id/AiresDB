@@ -39,7 +39,9 @@ menyediakan antarmuka resmi melalui **TinyServer HTTP/JSON** serta monitor CLI.
 - **satu jalur akses resmi** melalui TinyServer, sehingga client tidak membuka
   file database sebagai fallback;
 - **resource guard server** untuk membatasi waktu query, jumlah row hasil, dan
-  ukuran response JSON;
+  ukuran response JSON, memori query, dan byte spill sementara;
+- **optimizer tahap berikutnya** dengan multi-join greedy order, statistik tabel,
+  external hash join spill, serta `EXPLAIN` read-only;
 - **suite correctness, recovery, concurrency, dan benchmark** yang dapat
   dijalankan ulang dari repository.
 
@@ -296,6 +298,8 @@ Default resource limit:
 | Query result rows | 100.000 |
 | Query execution time | 30 detik |
 | JSON response body | 64 MiB |
+| Query memory before spill | 64 MiB |
+| Query spill budget | 1 GiB |
 
 Laporkan kerentanan sesuai [SECURITY.md](SECURITY.md).
 

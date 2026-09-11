@@ -126,6 +126,7 @@ function indexed_row(table::Table,key::Tuple)
 end
 
 function set_row!(table::Table,index::Int,row::Row)
+    table.statistics = nothing
     if table.shared_fields & TABLE_SHARED_ROWS != 0
         table.row_overrides[index] = row
     else
@@ -137,6 +138,7 @@ function set_row!(table::Table,index::Int,row::Row)
     row
 end
 function append_row!(table::Table,row::Row; id::UInt128=uuid4().value,stamp::UInt64=UInt64(0))
+    table.statistics = nothing
     haskey(table.positions,id) && constraint("Row ID internal duplikat.")
     materialize_table_rows!(table)
     materialize_table_stamps!(table)
@@ -159,6 +161,7 @@ function append_row!(table::Table,row::Row; id::UInt128=uuid4().value,stamp::UIn
 end
 function remove_rows!(table::Table,positions::Vector{Int})
     isempty(positions) && return
+    table.statistics = nothing
     sort!(unique!(positions))
     materialize_table_rows!(table)
     materialize_table_stamps!(table)

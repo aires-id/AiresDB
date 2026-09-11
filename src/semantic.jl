@@ -94,15 +94,20 @@ function validate_order_items(q::SelectQuery, schema::Vector{BoundColumn}, indic
 end
 
 function validate_query(db::Database, q::SelectQuery, stack::Set{String}=Set{String}())
-    length(q.sources) in (1,2) || fail("v0.1 mendukung satu sumber atau INNER JOIN dua sumber.")
+    isempty(q.sources) && fail("SELECT membutuhkan minimal satu sumber.")
     length(unique(q.sources)) == length(q.sources) || fail("Self join membutuhkan alias dan belum tersedia.")
     schema = reduce(vcat, [source_schema(db,n,stack) for n in q.sources])
-    if length(q.sources) == 2
-        j = q.join_condition
-        j isa BinaryExpr && j.op == :eq && j.left isa ColumnRef && j.right isa ColumnRef || fail("INNER JOIN membutuhkan kesetaraan dua kolom.")
-        a = resolve_column(j.left,schema); b = resolve_column(j.right,schema)
-        schema[a].source != schema[b].source || fail("Kolom JOIN harus berasal dari dua tabel berbeda.")
-        infer_expression(j,schema; allow_aggregate=false)
+    if length(q.sources) > 1
+        q.join_condition === nothing && fail("Gabung membutuhkan kondisi kesetaraan untuk setiap sumber.")
+        atoms = _join_equality_atoms(q.join_condition,schema)
+        isempty(atoms) && fail("INNER JOIN membutuhkan minimal satu kesetaraan kolom.")
+        joined_sources = Set{String}()
+        for atom in atoms
+            atom[1] in q.sources && atom[3] in q.sources || fail("Kolom JOIN harus berasal dari sumber query.")
+            push!(joined_sources,atom[1]); push!(joined_sources,atom[3])
+        end
+        joined_sources == Set(q.sources) || fail("Setiap sumber JOIN harus terhubung oleh kesetaraan kolom.")
+        infer_expression(q.join_condition,schema; allow_aggregate=false)
     elseif q.join_condition !== nothing
         fail("Gabung membutuhkan dua tabel.")
     end

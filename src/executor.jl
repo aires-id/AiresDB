@@ -66,6 +66,21 @@ function _filter_source_rows(rows::Vector{Row},parts::Vector{ExprNode},schema::V
     filtered
 end
 
+function _push_source_filters(condition::Union{Nothing,ExprNode},schema::Vector{BoundColumn},sources::Vector{String})
+    filters = Dict{String,Vector{ExprNode}}(source=>ExprNode[] for source in sources)
+    residual = ExprNode[]
+    condition === nothing && return filters,residual
+    for part in _condition_conjuncts(condition)
+        used = _condition_sources!(Set{String}(),part,schema)
+        if length(used) == 1 && only(used) in sources
+            push!(filters[only(used)],part)
+        else
+            push!(residual,part)
+        end
+    end
+    filters,residual
+end
+
 """Choose the hash build side after source predicates have reduced both inputs.
 
 Ties keep the right side as the build side because that is the legacy path and
@@ -173,27 +188,70 @@ end
 
 function join_rows(db::Database,q::SelectQuery,schema::Vector{BoundColumn},stack::Set{String})
     length(q.sources) == 1 && return source_rows(db,q.sources[1],stack),q.condition
-    leftschema = BoundColumn[c for c in schema if c.source == q.sources[1]]
-    rightschema = BoundColumn[c for c in schema if c.source == q.sources[2]]
-    leftfilters,rightfilters,residual = _push_join_filters(q.condition,schema,q.sources[1],q.sources[2])
+    source_schemas = Dict{String,Vector{BoundColumn}}()
+    offset = 0
+    for source in q.sources
+        source_columns = source_schema(db,source,stack)
+        selected_schema = BoundColumn[schema[index] for index in (offset+1):(offset+length(source_columns))]
+        source_schemas[source] = selected_schema
+        offset += length(source_columns)
+    end
+    filters,residual = _push_source_filters(q.condition,schema,q.sources)
     residual_condition = isempty(residual) ? nothing :
         reduce((left,right)->LogicalAnd(left,right),residual)
-    # Predicate pushdown is deliberately performed before the join build side
-    # is selected. This makes the cost decision reflect the actual candidates,
-    # not the unfiltered table cardinalities.
-    leftrows = _filter_source_rows(source_rows(db,q.sources[1],stack),leftfilters,leftschema)
-    rightrows = _filter_source_rows(source_rows(db,q.sources[2],stack),rightfilters,rightschema)
-    nleft = count(c->c.source == q.sources[1],schema)
-    condition = q.join_condition::BinaryExpr
-    i = resolve_column(condition.left,schema); j = resolve_column(condition.right,schema)
-    i > nleft && ((i,j) = (j,i))
-    j -= nleft
-    floating = any(r->r[i] isa Float64,leftrows) || any(r->r[j] isa Float64,rightrows)
-    indexed = _join_index_nested_loop_right(leftrows,rightrows,
-        get(db.tables,q.sources[2],nothing),i,j,
-        schema[i].kind,schema[nleft+j].kind)
-    indexed === nothing || return indexed,residual_condition
-    _hash_join_preserve_left(leftrows,rightrows,i,j,floating),residual_condition
+    # Predicate pushdown is deliberately performed before the join order and
+    # build side are selected. Cost decisions therefore see actual candidates.
+    rows_by_source = Dict{String,Vector{Row}}()
+    for source in q.sources
+        rows_by_source[source] = _filter_source_rows(source_rows(db,source,stack),filters[source],source_schemas[source])
+    end
+    plan = plan_join_order(db,q,schema,stack;
+        cardinalities=Dict(source=>length(rows_by_source[source]) for source in q.sources))
+    current_source = first(plan.order)
+    current_sources = String[current_source]
+    current_rows = rows_by_source[current_source]
+    atoms = _join_equality_atoms(q.join_condition,schema)
+    for source in plan.order[2:end]
+        links = _join_links(source,current_sources,atoms)
+        right_rows = rows_by_source[source]
+        if isempty(links)
+            current_rows = _cartesian_join(current_rows,right_rows)
+        else
+            left_indices = Int[_source_column_index(source_schemas,current_sources,link[3],link[4]) for link in links]
+            # The right relation is a single source, so its local index is just
+            # the column position in that source schema.
+            right_indices = Int[findfirst(c->c.name == link[2],source_schemas[source]) for link in links]
+            first_link = only(links)
+            floating = any(row->any(index->row[index] isa Float64,left_indices),current_rows) ||
+                any(row->any(index->row[index] isa Float64,right_indices),right_rows)
+            # Preserve the existing unique-index nested-loop fast path for the
+            # original two-source shape. Multi-join steps use the generic hash
+            # operator because their left side is an intermediate relation.
+            indexed = if length(q.sources) == 2 && current_sources == [q.sources[1]] && source == q.sources[2] && length(links) == 1
+                _join_index_nested_loop_right(current_rows,right_rows,get(db.tables,source,nothing),
+                    only(left_indices),only(right_indices),
+                    schema[resolve_column(ColumnRef(first_link[3],first_link[4]),schema)].kind,
+                    schema[resolve_column(ColumnRef(first_link[1],first_link[2]),schema)].kind)
+            else
+                nothing
+            end
+            current_rows = indexed === nothing ? _hash_join_preserve_left_keys(current_rows,right_rows,left_indices,right_indices,floating) : indexed
+        end
+        push!(current_sources,source)
+    end
+    if current_sources != q.sources
+        mapping = Int[]
+        for source in q.sources
+            start = 0
+            for current in current_sources
+                current == source && break
+                start += length(source_schemas[current])
+            end
+            append!(mapping,start .+ (1:length(source_schemas[source])))
+        end
+        current_rows = [Cell[row[index] for index in mapping] for row in current_rows]
+    end
+    current_rows,residual_condition
 end
 
 function query_order_permutation(keys::AbstractVector, orders::Vector{OrderByItem})
@@ -302,6 +360,15 @@ function select_rows(db::Database,q::SelectQuery,stack::Set{String}=Set{String}(
     result = QueryResult(labels,output)
     top_level && _query_budget_leave!()
     result
+end
+
+function explain_session(session::Session,query::SelectQuery)
+    with_snapshot(session) do
+        db = active_database(session)
+        validate_query(db,query)
+        record_query_reads!(session,query)
+        QueryResult(["Plan"],Row[Cell[line] for line in explain_query(db,query)])
+    end
 end
 
 """Stream a simple single-table SELECT from bounded ARSP-4 heap batches.
@@ -434,6 +501,8 @@ function execute_statement!(session::Session,stmt::Statement)
         return execute_transaction!(session,stmt)
     elseif stmt isa SelectQuery
         return select_session(session,stmt)
+    elseif stmt isa ExplainQuery
+        return explain_session(session,stmt.query)
     end
     mutate!(session,stmt) do db
         if stmt isa CreateTable
@@ -523,6 +592,7 @@ function execute_statement!(session::Session,stmt::Statement)
                 table.columns = copy(table.columns)
                 table.shared_fields = table.shared_fields & (UInt8(0xff) ⊻ TABLE_SHARED_COLUMNS)
             end
+            table.statistics = nothing
             push!(table.columns,stmt.column)
             for i in eachindex(table.rows); set_row!(table,i,vcat(table_row(table,i),Cell[nothing])); end
             return status_result("Kolom '$(stmt.column.name)' ditambahkan.")
@@ -533,6 +603,7 @@ function execute_statement!(session::Session,stmt::Statement)
                 table.columns = copy(table.columns)
                 table.shared_fields = table.shared_fields & (UInt8(0xff) ⊻ TABLE_SHARED_COLUMNS)
             end
+            table.statistics = nothing
             if table.columns[i].auto
                 table.shared_fields & TABLE_SHARED_NEXT_IDS != 0 && (table.next_ids = copy(table.next_ids);
                     table.shared_fields = table.shared_fields & (UInt8(0xff) ⊻ TABLE_SHARED_NEXT_IDS))

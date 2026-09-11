@@ -23,12 +23,14 @@ blok tersebut. Ganti kutip yang sama dengan dua kutip untuk menyertakannya dalam
 | Group | `Pilih 'B & Sum(A)' Dari 'T' Grup Dari 'B' -:` |
 | Urut | `Pilih 'A & B' Dari 'T' M: 'B Atas & A Bawah' -:` |
 | Limit | `Pilih '*' Dari 'T' Limit(10) -:` |
+| Explain | `EXPLAIN Pilih '*' Dari 'T' -:` |
 | Update | `Tabel_Upt 'T' Isi 'A = A + 1 & B = Nama Baru' Dengan 'A = 1' -:` |
 | Add column | `Tabel_Upt 'T' + Kolom 'C' Dengan 'C = C(20&Null)' -:` |
 | Remove column | `Kolom_Rmv 'T.C' -:` |
 | Delete row | `Baris_Rmv 'T' Dengan 'A = 1' -:` |
 | Drop table | `Tabel_Rmv 'T' -:` |
 | Join | `Pilih 'T.B && U.Nama' Dari 'T &&& U' Gabung Dengan 'T.A = U.ID' -:` |
+| Multi-join | `Pilih '*' Dari 'A &&& B &&& C' Gabung Dengan 'A.ID = B.AID &: B.ID = C.BID' -:` |
 | View | `Lihat 'V' Pilih 'A & B' Dari 'T' Dengan 'A > 1' M: 'B Bawah' -:` |
 | Begin | `Transaksi -:` |
 | Commit | `Gabungkan -:` |
@@ -38,6 +40,17 @@ blok tersebut. Ganti kutip yang sama dengan dua kutip untuk menyertakannya dalam
 **UPDATE dan DELETE tanpa `Dengan` berlaku pada semua row.** Jumlah nilai INSERT
 harus cocok dengan semua kolom non-auto dalam urutan schema; belum ada daftar
 kolom INSERT opsional. Multi-row INSERT adalah satu statement atomik.
+
+`EXPLAIN` menerima SELECT yang sama dan mengembalikan satu kolom `Plan` berisi
+urutan scan, estimasi cardinality, join order, operator hash join, filter,
+aggregate, sort, dan limit. EXPLAIN tidak menulis data, tetapi tetap membaca
+metadata/data snapshot untuk menghitung statistik tabel.
+
+Sumber join dapat berjumlah lebih dari dua. Kondisi `Gabung Dengan` harus berupa
+satu atau beberapa equality antar-kolom yang digabung dengan `&:` dan seluruh
+sumber harus terhubung. Optimizer memilih urutan left-deep secara greedy dari
+statistik row count/distinct key; urutan kolom hasil tetap mengikuti urutan
+sumber pada query.
 
 ## Separator dan keyword kondisi
 
