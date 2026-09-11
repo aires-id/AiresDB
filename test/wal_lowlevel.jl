@@ -6,6 +6,13 @@ include(joinpath(@__DIR__,"..","src","wal.jl"))
 const WAL_SOURCE_DIR = normpath(joinpath(@__DIR__,"..","src"))
 
 @testset "WAL framing, durability and process recovery" begin
+    @test _wal_lock_error_is_retryable(Base.Libc.EAGAIN)
+    @test _wal_lock_error_is_retryable(Base.Libc.EINTR)
+    if isdefined(Base.Libc,:EWOULDBLOCK)
+        @test _wal_lock_error_is_retryable(getfield(Base.Libc,:EWOULDBLOCK))
+    end
+    @test !_wal_lock_error_is_retryable(typemax(Int32))
+
     mktempdir() do dir
         p = joinpath(dir,"basic.aires")
         @test !detect_wal(p)

@@ -105,6 +105,12 @@ end
 
 _wal_winpath(path::String) = transcode(UInt16,abspath(path)*"\0")
 
+function _wal_lock_error_is_retryable(err::Integer)
+    err == Base.Libc.EAGAIN && return true
+    err == Base.Libc.EINTR && return true
+    isdefined(Base.Libc,:EWOULDBLOCK) && err == getfield(Base.Libc,:EWOULDBLOCK)
+end
+
 function _wal_os_lock(path::String; timeout::Real=60)
     lockpath = _wal_canonical(path)*".lock"
     started = time_ns()
@@ -130,7 +136,7 @@ function _wal_os_lock(path::String; timeout::Real=60)
             while true
                 ccall(:flock,Cint,(Base.RawFD,Cint),Base.fd(file),6) == 0 && return file # EX|NB
                 err = Base.Libc.errno()
-                err in (Base.Libc.EAGAIN,Base.Libc.EWOULDBLOCK,Base.Libc.EINTR) ||
+                _wal_lock_error_is_retryable(err) ||
                     storageerror("Tidak dapat mengunci WAL (errno $err).")
                 (time_ns()-started)/1e9 < timeout || storageerror("Waktu tunggu kunci WAL habis.")
                 sleep(0.005)
