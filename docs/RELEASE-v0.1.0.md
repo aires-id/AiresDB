@@ -85,11 +85,12 @@ tidak berisi WAL. File sengaja stabil agar semua proses mengunci objek OS yang
 sama. Jangan menghapusnya saat database dapat dipakai proses lain. Process crash
 tidak memerlukan penghapusan manual karena OS melepaskan lock handle.
 
-Backup logis minimum dapat menyalin `.aires` hanya setelah database idle atau
-setelah mekanisme snapshot backup yang sesuai dibangun. Menyalin `.aires` yang
-sedang bertambah tanpa koordinasi dapat menangkap ekor parsial; recovery mampu
-mengabaikan ekor parsial, tetapi backup operasional tetap perlu divalidasi dengan
-open penuh sebelum dianggap berhasil.
+Gunakan `backup_database!` untuk backup operasional. API ini mengambil prefix WAL
+yang konsisten di bawah lock, memvalidasi checksum, dan mempublikasikan artifact
+secara atomic. `.aires.pages` sengaja tidak disalin karena merupakan sidecar
+turunan; restore membangunnya ulang pada open berikutnya. Restore membutuhkan
+semua session/proses target dihentikan, lalu memvalidasi seluruh WAL sebelum
+atomic replace.
 
 ## Perubahan perilaku transaksi
 

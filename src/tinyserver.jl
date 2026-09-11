@@ -7,6 +7,9 @@ const DEFAULT_SERVER_PORT = 1972
 const DEFAULT_MAX_REQUEST_BODY = 8 * 1024 * 1024
 const DEFAULT_MAX_SESSIONS = 64
 const DEFAULT_IDLE_TIMEOUT = 600.0
+const DEFAULT_MAX_RESULT_ROWS = 100_000
+const DEFAULT_MAX_QUERY_SECONDS = 30.0
+const DEFAULT_MAX_RESPONSE_BODY = 64 * 1024 * 1024
 const ROOT_CREDENTIAL_FILE = ".airesdb-auth.toml"
 const PASSWORD_ITERATIONS = 210_000
 const PASSWORD_SALT_BYTES = 16
@@ -19,6 +22,10 @@ Base.@kwdef struct TinyServerConfig
     max_request_body::Int = DEFAULT_MAX_REQUEST_BODY
     max_sessions::Int = DEFAULT_MAX_SESSIONS
     idle_timeout::Float64 = DEFAULT_IDLE_TIMEOUT
+    max_result_rows::Int = DEFAULT_MAX_RESULT_ROWS
+    max_query_seconds::Float64 = DEFAULT_MAX_QUERY_SECONDS
+    max_response_body::Int = DEFAULT_MAX_RESPONSE_BODY
+    allow_insecure_network::Bool = false
     verbose::Bool = false
 end
 
@@ -120,9 +127,14 @@ function _string_field(body::AbstractDict, key::String)
     String(value)
 end
 
-_json_response(status::Int, body) = HTTP.Response(status,
-    ["Content-Type" => "application/json; charset=utf-8", "Cache-Control" => "no-store"],
-    JSON3.write(body))
+function _json_response(status::Int, body; max_bytes::Union{Nothing,Integer}=nothing)
+    payload = JSON3.write(body)
+    max_bytes === nothing || ncodeunits(payload) <= max_bytes ||
+        throw(AiresError("Resource Limit", "Response melebihi batas $(max_bytes) byte."))
+    HTTP.Response(status,
+        ["Content-Type" => "application/json; charset=utf-8", "Cache-Control" => "no-store"],
+        payload)
+end
 
 function _server_error(status::Int, code::String, message::String; category::String="Server Error")
     _json_response(status, (; ok=false, error=(; code, category, message)))
@@ -236,10 +248,10 @@ end
 function _server_command(session::Session, line::AbstractString)
     parts = split(strip(line); limit=2)
     command = lowercase(parts[1])
-    command in (".help", ".databases", ".tables", ".current", ".mvcc", ".checkpoint", ".vacuum") &&
+    command in (".help", ".databases", ".tables", ".current", ".mvcc", ".checkpoint", ".vacuum", ".compact") &&
         length(parts) != 1 && fail("$command tidak menerima argumen.")
     if command == ".help"
-        return "Gunakan .databases, .tables, .schema Nama, .current, .mvcc, .checkpoint, .vacuum, .cancel, atau .exit."
+        return "Gunakan .databases, .tables, .schema Nama, .current, .mvcc, .checkpoint, .vacuum, .compact, .cancel, atau .exit."
     elseif command == ".databases"
         names = sort(filter(name -> endswith(name, ".aires") && !startswith(name, ".") &&
             isfile(joinpath(session.root, name)), readdir(session.root)))
@@ -282,20 +294,28 @@ function _server_command(session::Session, line::AbstractString)
         return format_table(checkpoint!(session))
     elseif command == ".vacuum"
         return "Vacuum selesai; $(vacuum!(session)) versi lama dibersihkan."
+    elseif command == ".compact"
+        return String(compact_page_store!(session).rows[1][1])
     elseif command in (".exit", ".cancel")
         fail("Perintah '$command' ditangani oleh client monitor.")
     end
     fail("Perintah internal '$command' tidak dikenal. Gunakan .help.")
 end
 
-function _execute_server_query(entry::ServerSession, query::String)
+function _execute_server_query(entry::ServerSession, query::String, config::TinyServerConfig)
     lock(entry.mutex) do
         stripped = strip(query)
         isempty(stripped) && throw(AiresError("Request Error", "Query must not be empty."))
-        started = time_ns()
-        result = startswith(stripped, ".") ? _server_command(entry.session, stripped) : execute!(entry.session, query)
-        elapsed = (time_ns() - started) / 1_000_000
-        result isa QueryResult ? _result_payload(result, elapsed, entry.session) : _command_payload(String(result), elapsed, entry.session)
+        deadline = UInt64(time_ns()) + UInt64(round(config.max_query_seconds * 1_000_000_000))
+        intermediate_limit = config.max_result_rows > typemax(Int) ÷ 4 ? typemax(Int) :
+            max(config.max_result_rows * 4,config.max_result_rows + 1024)
+        budget = QueryBudget(deadline,config.max_result_rows,intermediate_limit,0,0,0,0)
+        _with_query_budget(() -> begin
+            started = time_ns()
+            result = startswith(stripped, ".") ? _server_command(entry.session, stripped) : execute!(entry.session, query)
+            elapsed = (time_ns() - started) / 1_000_000
+            result isa QueryResult ? _result_payload(result, elapsed, entry.session) : _command_payload(String(result), elapsed, entry.session)
+        end,budget)
     end
 end
 
@@ -308,6 +328,8 @@ function _error_response(error)
         "A3002", 503
     elseif category == "Request Too Large"
         "A1004", 413
+    elseif category == "Resource Limit"
+        "A1005", 429
     elseif category == "Request Error"
         "A1003", 400
     elseif category == "Storage Error" && occursin("tidak ditemukan", error.message)
@@ -352,7 +374,8 @@ function tinyserver_handler(server::TinyServer, request::HTTP.Request)
             entry = _take_session(server, token)
             entry === nothing && return _server_error(401, "A1002", "Invalid or expired session."; category="Session Error")
             try
-                return _json_response(200, _execute_server_query(entry, query))
+                return _json_response(200, _execute_server_query(entry, query, server.config);
+                    max_bytes=server.config.max_response_body)
             finally
                 _release_session!(server, entry)
             end
@@ -378,6 +401,13 @@ function start_tinyserver(config::TinyServerConfig=TinyServerConfig(); password=
     config.max_request_body > 0 || throw(ArgumentError("max_request_body must be positive"))
     config.max_sessions > 0 || throw(ArgumentError("max_sessions must be positive"))
     config.idle_timeout > 0 || throw(ArgumentError("idle_timeout must be positive"))
+    config.max_result_rows > 0 || throw(ArgumentError("max_result_rows must be positive"))
+    isfinite(config.max_query_seconds) && config.max_query_seconds > 0 ||
+        throw(ArgumentError("max_query_seconds must be finite and positive"))
+    config.max_response_body > 0 || throw(ArgumentError("max_response_body must be positive"))
+    loopback = lowercase(strip(config.host)) in ("127.0.0.1", "localhost", "::1")
+    loopback || config.allow_insecure_network ||
+        throw(AiresError("Network Security", "Binding ke alamat non-loopback membutuhkan allow_insecure_network=true dan TLS reverse proxy."))
     mkpath(config.data_root)
     credential = _credential_path(config)
     if !isfile(credential)

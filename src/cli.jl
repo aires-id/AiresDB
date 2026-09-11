@@ -43,6 +43,7 @@ Semua statement AiresQL wajib diakhiri -: dan dapat ditulis multiline.
   .mvcc                 Statistik MVCC dan WAL
   .checkpoint           Jalankan checkpoint durable
   .vacuum               Bersihkan versi lama
+  .compact              Rebuild dan reclaim PageStore (offline)
   .cancel               Batalkan input multiline
   .exit                 Tutup session dan keluar
 """
@@ -217,18 +218,23 @@ function _parse_cli_options(args::Vector{String})
         "file" => nothing, "data_root" => abspath("data"), "verbose" => false,
         "max_request_body" => DEFAULT_MAX_REQUEST_BODY,
         "max_sessions" => DEFAULT_MAX_SESSIONS, "idle_timeout" => DEFAULT_IDLE_TIMEOUT,
+        "max_result_rows" => DEFAULT_MAX_RESULT_ROWS,
+        "max_query_seconds" => DEFAULT_MAX_QUERY_SECONDS,
+        "max_response_body" => DEFAULT_MAX_RESPONSE_BODY,
+        "allow_insecure_network" => false,
     )
     server = !isempty(args) && first(args) == "server"
     index = server ? 2 : 1
     while index <= length(args)
         arg = args[index]
         if arg in ("-h", "--host", "-P", "--port", "-u", "--user", "--file", "--data-root",
-                   "--max-request-body", "--max-sessions", "--idle-timeout")
+                   "--max-request-body", "--max-sessions", "--idle-timeout", "--max-result-rows",
+                   "--max-query-seconds", "--max-response-body")
             index < length(args) || throw(ArgumentError("$arg requires a value."))
             index += 1; value = args[index]
             key = arg in ("-h", "--host") ? "host" : arg in ("-P", "--port") ? "port" :
                   arg in ("-u", "--user") ? "user" : replace(arg[3:end], '-' => '_')
-            options[key] = key in ("port", "max_request_body", "max_sessions") ? parse(Int, value) :
+            options[key] = key in ("port", "max_request_body", "max_sessions", "max_result_rows", "max_response_body") ? parse(Int, value) :
                            key == "idle_timeout" ? parse(Float64, value) : value
         elseif arg == "-p"
             options["ask_password"] = true
@@ -236,6 +242,8 @@ function _parse_cli_options(args::Vector{String})
             options["no_banner"] = true
         elseif arg == "--verbose"
             options["verbose"] = true
+        elseif arg == "--allow-insecure-network"
+            options["allow_insecure_network"] = true
         elseif arg == "--help"
             options["help"] = true
         else
@@ -263,7 +271,7 @@ function _server_password(config::TinyServerConfig)
 end
 
 function _print_usage(io::IO=stdout)
-    println(io, "airesdb server [--host HOST] [--port PORT] [--data-root DIR] [--verbose]")
+    println(io, "airesdb server [--host HOST] [--port PORT] [--data-root DIR] [--max-result-rows N] [--max-query-seconds N] [--max-response-body BYTES] [--allow-insecure-network] [--verbose]")
     println(io, "airesdb -u USER -p [-h HOST] [-P PORT] [--file SCRIPT] [--no-banner]")
 end
 
@@ -277,6 +285,8 @@ function cli_main(args::Vector{String}=ARGS)
             config = TinyServerConfig(host=options["host"], port=options["port"],
                 data_root=abspath(options["data_root"]), max_request_body=options["max_request_body"],
                 max_sessions=options["max_sessions"], idle_timeout=options["idle_timeout"],
+                max_result_rows=options["max_result_rows"], max_query_seconds=options["max_query_seconds"],
+                max_response_body=options["max_response_body"], allow_insecure_network=options["allow_insecure_network"],
                 verbose=options["verbose"])
             password = _server_password(config)
             server = start_tinyserver(config; password)

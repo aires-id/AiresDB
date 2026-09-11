@@ -1,6 +1,79 @@
 # SPDX-FileCopyrightText: 2026 Aires Zam Wibisono
 # SPDX-License-Identifier: NCSA
 
+mutable struct QueryBudget
+    deadline_ns::UInt64
+    max_result_rows::Int
+    max_intermediate_rows::Int
+    emitted_rows::Int
+    intermediate_rows::Int
+    ticks::UInt64
+    query_depth::Int
+end
+
+const _QUERY_BUDGET_KEY = :airesdb_query_budget
+
+function _current_query_budget()
+    storage = Base.task_local_storage()
+    get(storage,_QUERY_BUDGET_KEY,nothing)
+end
+
+function _with_query_budget(f::Function,budget::QueryBudget)
+    storage = Base.task_local_storage()
+    had_previous = haskey(storage,_QUERY_BUDGET_KEY)
+    previous = get(storage,_QUERY_BUDGET_KEY,nothing)
+    storage[_QUERY_BUDGET_KEY] = budget
+    try
+        f()
+    finally
+        had_previous ? (storage[_QUERY_BUDGET_KEY] = previous) : delete!(storage,_QUERY_BUDGET_KEY)
+    end
+end
+
+function _query_budget_tick!()
+    budget = _current_query_budget()
+    budget === nothing && return nothing
+    budget.ticks += UInt64(1)
+    budget.ticks & UInt64(0x3f) == 0 || return nothing
+    time_ns() <= budget.deadline_ns ||
+        throw(AiresError("Resource Limit","Query melebihi batas waktu eksekusi."))
+    nothing
+end
+
+function _query_budget_emit!(count::Integer=1)
+    budget = _current_query_budget()
+    budget === nothing && return nothing
+    count >= 0 || storageerror("Jumlah row query tidak valid.")
+    budget.emitted_rows <= budget.max_result_rows - Int(count) ||
+        throw(AiresError("Resource Limit","Hasil query melebihi batas $(budget.max_result_rows) row."))
+    budget.emitted_rows += Int(count)
+    nothing
+end
+
+function _query_budget_work!(count::Integer=1)
+    budget = _current_query_budget()
+    budget === nothing && return nothing
+    count >= 0 || storageerror("Jumlah row intermediate query tidak valid.")
+    budget.intermediate_rows <= budget.max_intermediate_rows - Int(count) ||
+        throw(AiresError("Resource Limit", "Intermediate query melebihi batas $(budget.max_intermediate_rows) row."))
+    budget.intermediate_rows += Int(count)
+    nothing
+end
+
+function _query_budget_enter!()
+    budget = _current_query_budget()
+    budget === nothing && return true
+    budget.query_depth += 1
+    budget.query_depth == 1
+end
+
+function _query_budget_leave!()
+    budget = _current_query_budget()
+    budget === nothing && return nothing
+    budget.query_depth = max(0,budget.query_depth - 1)
+    nothing
+end
+
 mutable struct Session
     root::String
     storage::AbstractStorage
@@ -725,6 +798,49 @@ function vacuum!(session::Session)
     active_database(session); handle = session.handle::DatabaseHandle
     lock(handle.mutex) do; collect_versions!(handle); end
 end
+
+"""Rebuild the derived `.aires.pages` image and reclaim superseded pages.
+
+Physical compaction is intentionally an offline operation for one process:
+there must be one active session and one local PageStore lease.  The WAL stays
+authoritative, so a failed rebuild leaves the database recoverable on reopen.
+"""
+function compact_page_store!(session::Session)
+    lock(session.mutex) do
+        active_database(session)
+        in_transaction(session) && fail("Compact physical tidak boleh dijalankan selama transaksi aktif.")
+        session.engine.active_sessions == 1 ||
+            storageerror("Compact physical membutuhkan tepat satu session aktif pada Engine.")
+        handle = session.handle::DatabaseHandle
+        lock(handle.mutex) do
+            with_wal_lock(handle.path) do
+                refresh_locked!(handle,session.storage)
+                if handle.page_store === nothing || (handle.page_store::PageStore).manager.closed
+                    handle.page_store = open_page_store!(handle.path,handle.current,handle.file_id,handle.lsn,handle.csn)
+                end
+                store = handle.page_store
+                store === nothing &&
+                    storageerror("Sidecar sedang dimiliki proses lain; hentikan proses lain sebelum compact.")
+                store = store::PageStore
+                store.leases == 1 ||
+                    storageerror("Compact physical membutuhkan satu lease PageStore; tutup session/proses lain.")
+                rebuild_page_store!(store,handle.current,handle.file_id,handle.lsn,handle.csn;force=true)
+            end
+        end
+        status_result("Compact physical PageStore selesai.")
+    end
+end
+
+function compact_page_store!(root::AbstractString,database::AbstractString)
+    session = Session(root)
+    try
+        open_database!(session,String(database))
+        compact_page_store!(session)
+    finally
+        close(session)
+    end
+end
+
 function mvcc_stats(session::Session)
     active_database(session); h = session.handle::DatabaseHandle
     lock(h.mutex) do
@@ -775,7 +891,13 @@ function Base.close(session::Session)
     for handle in handles_to_close
         lock(handle.mutex) do
             _wal_close_cached!(handle.path)
-            handle.page_store === nothing || close_page_store!(handle.page_store::PageStore)
+            if handle.page_store !== nothing
+                close_page_store!(handle.page_store::PageStore)
+                # The handle remains cached on Engine so a later Session can
+                # reuse it.  Drop the lease-bearing pointer; open_database!
+                # will acquire a fresh lease when that Session returns.
+                handle.page_store = nothing
+            end
         end
     end
     nothing

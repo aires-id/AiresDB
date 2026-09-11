@@ -25,4 +25,6 @@ jobs:
       - name: App entry point
         run: |
           julia --startup-file=no -e 'using Pkg; Pkg.Apps.develop(path=pwd())'
-          "$HOME/.julia/bin/airesdb" --help
+          echo "$HOME/.julia/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.julia/bin:$PATH"
+          airesdb -u root -p --help

@@ -51,6 +51,29 @@ mutable struct PageStore
     # clean close/checkpoint, making a stale marker a deterministic rebuild
     # signal after a crash (standard WAL no-force policy).
     catalog_dirty::Bool
+    # One lease is held by each DatabaseHandle that points at this shared
+    # process-local store.  The physical manager may close only after the last
+    # handle releases its lease.
+    leases::Int
+    # Identity of the sidecar file currently opened by this manager. A
+    # replacement performed by another process must invalidate this handle
+    # even when the WAL identity/LSN happens to be unchanged.
+    page_device::UInt64
+    page_inode::UInt64
+end
+
+function _page_store_signature(path::AbstractString)
+    info = stat(path)
+    (UInt64(info.device),UInt64(info.inode))
+end
+
+function _page_store_path_current(store::PageStore)
+    try
+        device,inode = _page_store_signature(store.page_path)
+        device == store.page_device && inode == store.page_inode
+    catch
+        false
+    end
 end
 
 mutable struct PageStoreScanCursor
@@ -400,7 +423,7 @@ function _page_store_create(wal_path::String,db::Database,file_id::Vector{UInt8}
     pool = BufferPool(manager;capacity=buffer_pages)
     catalog = new_page!(pool,PageTypeCatalog;page_lsn=lsn)
     store = PageStore(wal_path,page_path,manager,pool,catalog.page_id,Dict{String,PageTableStore}(),
-        UInt8[],0,0,csn,RollingScheduler(),ReentrantLock(),0,false)
+        UInt8[],0,0,csn,RollingScheduler(),ReentrantLock(),0,false,0,0,0)
     try
         # A zero-LSN catalog makes an interrupted initial build explicitly stale.
         lock(catalog.latch)
@@ -422,6 +445,7 @@ function _page_store_create(wal_path::String,db::Database,file_id::Vector{UInt8}
         store.applied_file_id = copy(file_id)
         store.applied_lsn = lsn
         store.applied_csn = csn
+        store.page_device,store.page_inode = _page_store_signature(page_path)
         store
     catch
         close(manager)
@@ -435,7 +459,7 @@ function _page_store_open_existing(wal_path::String,db::Database,file_id::Vector
     manager = open_page_manager(page_path;page_size=PAGE_SIZE,durable_lsn=lsn)
     pool = BufferPool(manager;capacity=buffer_pages)
     store = PageStore(wal_path,page_path,manager,pool,UInt64(1),Dict{String,PageTableStore}(),
-        UInt8[],0,0,0,RollingScheduler(),ReentrantLock(),0,false)
+        UInt8[],0,0,0,RollingScheduler(),ReentrantLock(),0,false,0,0,0)
     try
         catalog = read_page(manager,UInt64(1))
         metadata = _page_store_read_metadata(catalog)
@@ -474,6 +498,7 @@ function _page_store_open_existing(wal_path::String,db::Database,file_id::Vector
         store.applied_lsn = lsn
         store.applied_csn = csn
         store.base_csn = csn
+        store.page_device,store.page_inode = _page_store_signature(page_path)
         store
     catch
         close(manager)
@@ -507,55 +532,73 @@ end
 """Open the process-canonical WAL-derived page store for one database path."""
 function open_page_store!(wal_path::String,db::Database,file_id::Vector{UInt8},lsn::UInt64,csn::UInt64;
                           buffer_pages::Integer=64)
-    key = _page_store_registry_key(page_store_path(wal_path))
-    lock(_PAGE_STORE_REGISTRY_LOCK) do
-        existing = get(_PAGE_STORE_REGISTRY,key,nothing)
-        if existing !== nothing && !(existing::PageStore).manager.closed
-            page_store_synchronize!(existing::PageStore,db,file_id,lsn,csn)
-            return existing::PageStore
+    # Recovery/open and physical publication use the same cross-process lock.
+    # This prevents a second process from opening a sidecar while the first is
+    # replacing or rebuilding it.
+    with_wal_lock(wal_path) do
+        key = _page_store_registry_key(page_store_path(wal_path))
+        lock(_PAGE_STORE_REGISTRY_LOCK) do
+            existing = get(_PAGE_STORE_REGISTRY,key,nothing)
+            if existing !== nothing && !(existing::PageStore).manager.closed
+                page_store_synchronize!(existing::PageStore,db,file_id,lsn,csn)
+                existing.leases += 1
+                return existing::PageStore
+            end
+            existing === nothing || delete!(_PAGE_STORE_REGISTRY,key)
+            store = _open_page_store_unregistered!(wal_path,db,file_id,lsn,csn;buffer_pages)
+            if store !== nothing
+                store.leases = 1
+                _PAGE_STORE_REGISTRY[key] = store
+            end
+            store
         end
-        existing === nothing || delete!(_PAGE_STORE_REGISTRY,key)
-        store = _open_page_store_unregistered!(wal_path,db,file_id,lsn,csn;buffer_pages)
-        store === nothing || (_PAGE_STORE_REGISTRY[key] = store)
-        store
     end
 end
 
-function rebuild_page_store!(store::PageStore,db::Database,file_id::Vector{UInt8},lsn::UInt64,csn::UInt64)
-    lock(store.mutex) do
-        capacity = length(store.pool.frames)
-        # Another process may have completed the physical P4 publication while
-        # this handle was stale. Reopen and validate that durable image first;
-        # deleting it is both unnecessary and invalid on Windows while the
-        # writer still owns an open manager.
-        close(store.manager) # Drop only this stale handle's dirty cache.
-        fresh = _page_store_open_existing(store.wal_path,db,file_id,lsn,csn;buffer_pages=capacity)
-        if fresh === nothing
-            # WAL is authoritative. A sidecar that did not publish its catalog
-            # cannot be trusted and is rebuilt only after our manager is closed.
-            # If another live process still owns a stale file, surface a clear
-            # storage error instead of silently writing around corruption.
-            isfile(store.page_path) && rm(store.page_path;force=true)
-            fresh = _page_store_create(store.wal_path,db,file_id,lsn,csn;buffer_pages=capacity)
+function rebuild_page_store!(store::PageStore,db::Database,file_id::Vector{UInt8},lsn::UInt64,csn::UInt64;
+                             force::Bool=false)
+    with_wal_lock(store.wal_path) do
+        lock(store.mutex) do
+            capacity = length(store.pool.frames)
+            # Another process may have completed the physical P4 publication while
+            # this handle was stale. Reopen and validate that durable image first;
+            # deleting it is both unnecessary and invalid on Windows while the
+            # writer still owns an open manager.
+            close(store.manager) # Drop only this stale handle's dirty cache.
+            fresh = force ? nothing :
+                _page_store_open_existing(store.wal_path,db,file_id,lsn,csn;buffer_pages=capacity)
+            if fresh === nothing
+                # WAL is authoritative. A sidecar that did not publish its catalog
+                # cannot be trusted and is rebuilt only after our manager is closed.
+                # If another live process still owns a stale file, surface a clear
+                # storage error instead of silently writing around corruption.
+                isfile(store.page_path) && rm(store.page_path;force=true)
+                fresh = _page_store_create(store.wal_path,db,file_id,lsn,csn;buffer_pages=capacity)
+            end
+            store.manager = fresh.manager
+            store.pool = fresh.pool
+            store.catalog_page_id = fresh.catalog_page_id
+            store.tables = fresh.tables
+            store.applied_file_id = fresh.applied_file_id
+            store.applied_lsn = fresh.applied_lsn
+            store.applied_csn = fresh.applied_csn
+            store.base_csn = fresh.base_csn
+            store.scheduler = fresh.scheduler
+            store.catalog_dirty = fresh.catalog_dirty
+            store.page_device = fresh.page_device
+            store.page_inode = fresh.page_inode
+            store.rebuilds += UInt64(1)
+            store
         end
-        store.manager = fresh.manager
-        store.pool = fresh.pool
-        store.catalog_page_id = fresh.catalog_page_id
-        store.tables = fresh.tables
-        store.applied_file_id = fresh.applied_file_id
-        store.applied_lsn = fresh.applied_lsn
-        store.applied_csn = fresh.applied_csn
-        store.base_csn = fresh.base_csn
-        store.scheduler = fresh.scheduler
-        store.catalog_dirty = fresh.catalog_dirty
-        store.rebuilds += UInt64(1)
-        store
     end
 end
 
 function page_store_synchronize!(store::PageStore,db::Database,file_id::Vector{UInt8},lsn::UInt64,csn::UInt64)
-    (store.applied_file_id == file_id && store.applied_lsn == lsn && store.applied_csn == csn) && return store
-    rebuild_page_store!(store,db,file_id,lsn,csn)
+    with_wal_lock(store.wal_path) do
+        (store.applied_file_id == file_id && store.applied_lsn == lsn && store.applied_csn == csn &&
+         _page_store_path_current(store)) && return store
+        rebuild_page_store!(store,db,file_id,lsn,csn)
+    end
 end
 
 function _page_store_failpoint(stage::String)
@@ -693,13 +736,15 @@ const _PAGE_COMMIT_HANDLERS = StoragePhaseHandlers(
 """Apply a WAL-durable transaction through P1/P2/P3/P4, then publish page LSN."""
 function page_store_apply_commit!(store::PageStore,before::Database,after::Database,tx::TransactionState,
                                   csn::UInt64,lsn::UInt64,file_id::Vector{UInt8})
-    lock(store.mutex) do
-        plan = _PageCommitPlan(store,before,after,tx,csn,lsn,copy(file_id))
-        work = StorageWorkUnit(StorageWrite,after.name,"";snapshot_csn=tx.snapshot_csn,
-            transaction_id=tx.id,handlers=_PAGE_COMMIT_HANDLERS,context=plan)
-        request_id = submit!(store.scheduler,work)
-        run_until_complete!(store.scheduler,request_id)
-        store
+    with_wal_lock(store.wal_path) do
+        lock(store.mutex) do
+            plan = _PageCommitPlan(store,before,after,tx,csn,lsn,copy(file_id))
+            work = StorageWorkUnit(StorageWrite,after.name,"";snapshot_csn=tx.snapshot_csn,
+                transaction_id=tx.id,handlers=_PAGE_COMMIT_HANDLERS,context=plan)
+            request_id = submit!(store.scheduler,work)
+            run_until_complete!(store.scheduler,request_id)
+            store
+        end
     end
 end
 
@@ -764,26 +809,30 @@ end
 
 function page_store_scan_cursor(store::PageStore,name::String,snapshot_csn::UInt64;
                                 batch_size::Integer=256,row_ids::Union{Nothing,AbstractVector{UInt128}}=nothing)
-    lock(store.mutex) do
-        snapshot_csn >= store.base_csn || return nothing
-        entry = get(store.tables,name,nothing)
-        entry === nothing && return nothing
-        order = row_ids === nothing || !entry.requires_logical_order ? nothing : Vector{UInt128}(row_ids)
-        PageStoreScanCursor(store,entry,heap_batch_cursor(entry.heap,store.pool;batch_size),snapshot_csn,order,1)
+    with_wal_lock(store.wal_path) do
+        lock(store.mutex) do
+            snapshot_csn >= store.base_csn || return nothing
+            entry = get(store.tables,name,nothing)
+            entry === nothing && return nothing
+            order = row_ids === nothing || !entry.requires_logical_order ? nothing : Vector{UInt128}(row_ids)
+            PageStoreScanCursor(store,entry,heap_batch_cursor(entry.heap,store.pool;batch_size),snapshot_csn,order,1)
+        end
     end
 end
 
 """Fetch one bounded visible row batch through an ARSP-4 scan work unit."""
 function next_page_store_batch!(cursor::PageStoreScanCursor)
     store = cursor.store
-    lock(store.mutex) do
-        work = StorageWorkUnit(StorageSequentialScan,"",cursor.table.name;snapshot_csn=cursor.snapshot_csn,
-            handlers=_PAGE_SCAN_HANDLERS,context=cursor)
-        request_id = submit!(store.scheduler,work)
-        completed = run_until_complete!(store.scheduler,request_id)
-        batch = completed.result
-        batch === nothing && return nothing
-        Row[copy(something(record.values,Cell[])) for (_,record) in batch]
+    with_wal_lock(store.wal_path) do
+        lock(store.mutex) do
+            work = StorageWorkUnit(StorageSequentialScan,"",cursor.table.name;snapshot_csn=cursor.snapshot_csn,
+                handlers=_PAGE_SCAN_HANDLERS,context=cursor)
+            request_id = submit!(store.scheduler,work)
+            completed = run_until_complete!(store.scheduler,request_id)
+            batch = completed.result
+            batch === nothing && return nothing
+            Row[copy(something(record.values,Cell[])) for (_,record) in batch]
+        end
     end
 end
 
@@ -791,26 +840,30 @@ end
 function page_store_index_cursor(store::PageStore,table::Table,spec::Tuple,snapshot_csn::UInt64;
                                  reverse::Bool=false,lower=nothing,upper=nothing,
                                  lower_inclusive::Bool=true,upper_inclusive::Bool=true)
-    lock(store.mutex) do
-        snapshot_csn == store.applied_csn || return nothing
-        all(index->!table.columns[index].nullable,spec) || return nothing
-        entry = get(store.tables,table.name,nothing)
-        entry === nothing && return nothing
-        tree = get(entry.indexes,spec,nothing)
-        tree === nothing && return nothing
-        PageStoreIndexCursor(store,entry,btree_range_cursor(store.pool,tree;reverse,lower,upper,
-            lower_inclusive,upper_inclusive),snapshot_csn)
+    with_wal_lock(store.wal_path) do
+        lock(store.mutex) do
+            snapshot_csn == store.applied_csn || return nothing
+            all(index->!table.columns[index].nullable,spec) || return nothing
+            entry = get(store.tables,table.name,nothing)
+            entry === nothing && return nothing
+            tree = get(entry.indexes,spec,nothing)
+            tree === nothing && return nothing
+            PageStoreIndexCursor(store,entry,btree_range_cursor(store.pool,tree;reverse,lower,upper,
+                lower_inclusive,upper_inclusive),snapshot_csn)
+        end
     end
 end
 
 function next_page_store_index_batch!(cursor::PageStoreIndexCursor)
     store = cursor.store
-    lock(store.mutex) do
-        work = StorageWorkUnit(StorageIndex,"",cursor.table.name;snapshot_csn=cursor.snapshot_csn,
-            handlers=_PAGE_INDEX_SCAN_HANDLERS,context=cursor)
-        request_id = submit!(store.scheduler,work)
-        completed = run_until_complete!(store.scheduler,request_id)
-        completed.result
+    with_wal_lock(store.wal_path) do
+        lock(store.mutex) do
+            work = StorageWorkUnit(StorageIndex,"",cursor.table.name;snapshot_csn=cursor.snapshot_csn,
+                handlers=_PAGE_INDEX_SCAN_HANDLERS,context=cursor)
+            request_id = submit!(store.scheduler,work)
+            completed = run_until_complete!(store.scheduler,request_id)
+            completed.result
+        end
     end
 end
 
@@ -875,13 +928,15 @@ const _PAGE_LOOKUP_HANDLERS = StoragePhaseHandlers(
 )
 
 function page_store_lookup(store::PageStore,table::Table,key::Tuple,snapshot_csn::UInt64)
-    lock(store.mutex) do
-        plan = _PageLookupPlan(store,table,key,snapshot_csn,nothing,UInt128(0),UInt64(0))
-        work = StorageWorkUnit(StoragePointLookup,"",table.name;snapshot_csn,
-            handlers=_PAGE_LOOKUP_HANDLERS,context=plan)
-        request_id = submit!(store.scheduler,work)
-        completed = run_until_complete!(store.scheduler,request_id)
-        completed.result
+    with_wal_lock(store.wal_path) do
+        lock(store.mutex) do
+            plan = _PageLookupPlan(store,table,key,snapshot_csn,nothing,UInt128(0),UInt64(0))
+            work = StorageWorkUnit(StoragePointLookup,"",table.name;snapshot_csn,
+                handlers=_PAGE_LOOKUP_HANDLERS,context=plan)
+            request_id = submit!(store.scheduler,work)
+            completed = run_until_complete!(store.scheduler,request_id)
+            completed.result
+        end
     end
 end
 
@@ -892,34 +947,43 @@ PageStore request avoids a second logical scan of a large table merely to
 register the read.
 """
 function page_store_lookup_identity(store::PageStore,table::Table,key::Tuple,snapshot_csn::UInt64)
-    lock(store.mutex) do
-        plan = _PageLookupPlan(store,table,key,snapshot_csn,nothing,UInt128(0),UInt64(0))
-        work = StorageWorkUnit(StoragePointLookup,"",table.name;snapshot_csn,
-            handlers=_PAGE_LOOKUP_HANDLERS,context=plan)
-        request_id = submit!(store.scheduler,work)
-        completed = run_until_complete!(store.scheduler,request_id)
-        completed.result === nothing && return nothing
-        (row=completed.result,row_id=plan.result_row_id,begin_csn=plan.result_begin_csn)
+    with_wal_lock(store.wal_path) do
+        lock(store.mutex) do
+            plan = _PageLookupPlan(store,table,key,snapshot_csn,nothing,UInt128(0),UInt64(0))
+            work = StorageWorkUnit(StoragePointLookup,"",table.name;snapshot_csn,
+                handlers=_PAGE_LOOKUP_HANDLERS,context=plan)
+            request_id = submit!(store.scheduler,work)
+            completed = run_until_complete!(store.scheduler,request_id)
+            completed.result === nothing && return nothing
+            (row=completed.result,row_id=plan.result_row_id,begin_csn=plan.result_begin_csn)
+        end
     end
 end
 
 function page_store_stats(store::PageStore)
-    lock(store.mutex) do
-        (page_path=store.page_path,applied_lsn=store.applied_lsn,applied_csn=store.applied_csn,
-         base_csn=store.base_csn,tables=length(store.tables),rebuilds=store.rebuilds,
-         catalog_dirty=store.catalog_dirty,
-         page_manager=page_manager_stats(store.manager),buffer_pool=buffer_pool_stats(store.pool),
-         pipeline=pipeline_stats(store.scheduler))
+    with_wal_lock(store.wal_path) do
+        lock(store.mutex) do
+            (page_path=store.page_path,applied_lsn=store.applied_lsn,applied_csn=store.applied_csn,
+             base_csn=store.base_csn,tables=length(store.tables),rebuilds=store.rebuilds,
+             catalog_dirty=store.catalog_dirty,leases=store.leases,
+             page_manager=page_manager_stats(store.manager),buffer_pool=buffer_pool_stats(store.pool),
+             pipeline=pipeline_stats(store.scheduler))
+        end
     end
 end
 
 function close_page_store!(store::PageStore)
     key = _page_store_registry_key(store.page_path)
-    # Closing while holding the registry lock prevents a simultaneous opener
-    # from racing a Windows file handle that has not reached `close` yet.
-    lock(_PAGE_STORE_REGISTRY_LOCK) do
-        lock(store.mutex) do
-            if !store.manager.closed
+    # The final lease is closed under the database WAL lock.  Openers use the
+    # same order, so a new handle either acquires a lease before this close or
+    # observes the freshly closed store and opens a new manager safely.
+    with_wal_lock(store.wal_path) do
+        lock(_PAGE_STORE_REGISTRY_LOCK) do
+            get(_PAGE_STORE_REGISTRY,key,nothing) === store || return nothing
+            store.manager.closed && (delete!(_PAGE_STORE_REGISTRY,key); return nothing)
+            store.leases > 0 && (store.leases -= 1)
+            store.leases == 0 || return nothing
+            lock(store.mutex) do
                 if store.catalog_dirty
                     # Data/index pages must be durable before the catalog
                     # advertises their LSN. One file sync also covers dirty
@@ -932,8 +996,8 @@ function close_page_store!(store::PageStore)
                 end
                 close(store.pool)
             end
+            delete!(_PAGE_STORE_REGISTRY,key)
         end
-        get(_PAGE_STORE_REGISTRY,key,nothing) === store && delete!(_PAGE_STORE_REGISTRY,key)
     end
     nothing
 end
@@ -947,7 +1011,13 @@ function _close_page_stores_under!(root::AbstractString)
                   if store.wal_path == target || startswith(normpath(abspath(store.wal_path)),prefix)]
     end
     for store in unique(stores)
-        close_page_store!(store)
+        # This is an explicit controlled-host/test cleanup hook.  It may be
+        # called after a fixture intentionally left several Engine handles
+        # alive, so release every lease before removing the physical manager.
+        # Normal application code must close Sessions instead.
+        while !store.manager.closed
+            close_page_store!(store)
+        end
     end
     nothing
 end

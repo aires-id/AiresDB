@@ -14,7 +14,8 @@ using TOML
 using UUIDs
 
 export TinyServerConfig, TinyServer, start_tinyserver, stop_tinyserver!, server_url,
-       initialize_root_credentials!, tinyserver_handler, run_client, cli_main
+       initialize_root_credentials!, tinyserver_handler, run_client, cli_main,
+       backup_database!, restore_database!, compact_page_store!
 
 include("errors.jl")
 include("types.jl")
@@ -38,6 +39,7 @@ include("wal.jl")
 include("mvcc.jl")
 include("storage/pagestore.jl")
 include("transactions.jl")
+include("backup.jl")
 include("executor.jl")
 include("api.jl")
 include("relational.jl")
@@ -51,7 +53,7 @@ using ..AiresDB: Session, execute!, execute_script!, parse_airesql, tokenize,
     QueryResult, format_table, AiresError, Decimal, Money, Engine,
     begin_transaction!, commit!, rollback!, with_transaction, with_snapshot,
     lookup, bulk_insert!, update_key!, delete_key!, scan_rows, table_columns,
-    checkpoint!, vacuum!, mvcc_stats, storage_stats,
+    checkpoint!, vacuum!, compact_page_store!, mvcc_stats, storage_stats,
     RollingScheduler, StorageWorkUnit, StorageOperation, StoragePointLookup,
     StorageSequentialScan, StorageWrite, StorageIndex, StorageLaneState,
     LaneEmpty, LanePhase1, LanePhase2, LanePhase3, LanePhase4, LaneBlockedIO,
@@ -67,7 +69,7 @@ export Session, execute!, execute_script!, parse_airesql, tokenize,
     QueryResult, format_table, AiresError, Decimal, Money, Engine,
     begin_transaction!, commit!, rollback!, with_transaction, with_snapshot,
     lookup, bulk_insert!, update_key!, delete_key!, scan_rows, table_columns,
-    checkpoint!, vacuum!, mvcc_stats, storage_stats,
+    checkpoint!, vacuum!, compact_page_store!, mvcc_stats, storage_stats,
     RollingScheduler, StorageWorkUnit, StorageOperation, StoragePointLookup,
     StorageSequentialScan, StorageWrite, StorageIndex, StorageLaneState,
     LaneEmpty, LanePhase1, LanePhase2, LanePhase3, LanePhase4, LaneBlockedIO,

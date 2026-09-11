@@ -3,16 +3,78 @@
 
 function source_rows(db::Database,name::String,stack::Set{String})
     if haskey(db.tables,name)
-        return table_rows(db.tables[name])
+        rows = table_rows(db.tables[name])
+        isempty(db.tables[name].row_overrides) || _query_budget_work!(length(rows))
+        for _ in rows
+            _query_budget_tick!()
+        end
+        return rows
     end
     name in stack && fail("Siklus view pada '$name'.")
     select_rows(db,db.views[name].query,union(stack,Set([name]))).rows
+end
+
+function _condition_sources!(sources::Set{String},expression::ExprNode,schema::Vector{BoundColumn})
+    if expression isa ColumnRef
+        push!(sources,schema[resolve_column(expression,schema)].source)
+    elseif expression isa UnaryExpr
+        _condition_sources!(sources,expression.operand,schema)
+    elseif expression isa BinaryExpr || expression isa LogicalAnd || expression isa LogicalOr
+        _condition_sources!(sources,expression.left,schema)
+        _condition_sources!(sources,expression.right,schema)
+    elseif expression isa CallExpr
+        for argument in expression.args
+            _condition_sources!(sources,argument,schema)
+        end
+    end
+    sources
+end
+
+function _condition_conjuncts(condition::ExprNode)
+    condition isa LogicalAnd ? vcat(_condition_conjuncts(condition.left),
+        _condition_conjuncts(condition.right)) : ExprNode[condition]
+end
+
+function _push_join_filters(condition::Union{Nothing,ExprNode},schema::Vector{BoundColumn},
+                            left_name::String,right_name::String)
+    left = ExprNode[]; right = ExprNode[]; residual = ExprNode[]
+    condition === nothing && return left,right,residual
+    for part in _condition_conjuncts(condition)
+        sources = _condition_sources!(Set{String}(),part,schema)
+        if isempty(sources) || sources == Set([left_name])
+            push!(left,part)
+        elseif sources == Set([right_name])
+            push!(right,part)
+        else
+            push!(residual,part)
+        end
+    end
+    left,right,residual
+end
+
+function _filter_source_rows(rows::Vector{Row},parts::Vector{ExprNode},schema::Vector{BoundColumn})
+    isempty(parts) && return rows
+    bound = [bind_condition(part,schema) for part in parts]
+    filtered = Row[]
+    for row in rows
+        _query_budget_tick!()
+        if all(filter_matches(part,row,schema) for part in bound)
+            _query_budget_work!()
+            push!(filtered,row)
+        end
+    end
+    filtered
 end
 
 function join_rows(db::Database,q::SelectQuery,schema::Vector{BoundColumn},stack::Set{String})
     leftrows = source_rows(db,q.sources[1],stack)
     length(q.sources) == 1 && return leftrows
     rightrows = source_rows(db,q.sources[2],stack)
+    leftschema = BoundColumn[c for c in schema if c.source == q.sources[1]]
+    rightschema = BoundColumn[c for c in schema if c.source == q.sources[2]]
+    leftfilters,rightfilters,_ = _push_join_filters(q.condition,schema,q.sources[1],q.sources[2])
+    leftrows = _filter_source_rows(leftrows,leftfilters,leftschema)
+    rightrows = _filter_source_rows(rightrows,rightfilters,rightschema)
     nleft = count(c->c.source == q.sources[1],schema)
     condition = q.join_condition::BinaryExpr
     i = resolve_column(condition.left,schema); j = resolve_column(condition.right,schema)
@@ -22,13 +84,17 @@ function join_rows(db::Database,q::SelectQuery,schema::Vector{BoundColumn},stack
     key(v) = value_key(isnumber(v) ? (floating ? (v isa Float64 ? v : Float64(exact(v))) : exact(v)) : v)
     buckets = Dict{Any,Vector{Row}}()
     for r in rightrows
+        _query_budget_tick!()
         r[j] === nothing && continue
+        _query_budget_work!()
         push!(get!(buckets,key(r[j]),Row[]),r)
     end
     rows = Row[]
     for l in leftrows
+        _query_budget_tick!()
         l[i] === nothing && continue
         for r in get(buckets,key(l[i]),Row[])
+            _query_budget_work!()
             push!(rows,vcat(l,r))
         end
     end
@@ -54,18 +120,32 @@ function order_source_rows(rows::Vector{Row}, orders::Vector{OrderByItem}, bound
     isempty(orders) && return rows
     keys = Vector{Vector{Cell}}(undef,length(rows))
     for (index,row) in enumerate(rows)
+        _query_budget_tick!()
         keys[index] = Cell[evaluate(expression,row,schema) for expression in bound]
     end
     rows[query_order_permutation(keys,orders)]
 end
 
 function select_rows(db::Database,q::SelectQuery,stack::Set{String}=Set{String}())
+    top_level = _query_budget_enter!()
     schema,exprs,labels = validate_query(db,q,stack)
     bound = [bind_expression(e,schema) for e in exprs]
     bound_orders = ExprNode[bind_expression(item.expression,schema) for item in q.orders]
     condition = bind_condition(q.condition,schema)
     input = join_rows(db,q,schema,stack)
-    rows = condition === nothing ? input : Row[r for r in input if filter_matches(condition,r,schema)]
+    rows = if condition === nothing
+        input
+    else
+        filtered = Row[]
+        for row in input
+            _query_budget_tick!()
+            if filter_matches(condition,row,schema)
+                _query_budget_work!()
+                push!(filtered,row)
+            end
+        end
+        filtered
+    end
     output = Row[]
     if !isempty(q.groups) || any(has_aggregate,exprs)
         groups = Vector{Row}[]
@@ -76,36 +156,54 @@ function select_rows(db::Database,q::SelectQuery,stack::Set{String}=Set{String}(
             indices = [resolve_column(e,schema) for e in q.groups]
             positions = Dict{Tuple,Int}()
             for row in rows
+                _query_budget_tick!()
                 key = Tuple(value_key(row[i]) for i in indices)
                 if !haskey(positions,key)
+                    _query_budget_work!()
                     push!(groups,Row[]); positions[key] = length(groups)
                 end
+                _query_budget_work!()
                 push!(groups[positions[key]],row)
             end
         end
         for group in groups
+            _query_budget_tick!()
             representative = isempty(group) ? Cell[nothing for _ in schema] : first(group)
+            _query_budget_work!()
             push!(output,Cell[evaluate(e,representative,schema,group) for e in bound])
             isempty(q.orders) || push!(order_keys,Cell[evaluate(e,representative,schema,group) for e in bound_orders])
         end
         isempty(q.orders) || (output = output[query_order_permutation(order_keys,q.orders)])
+        q.limit === nothing || resize!(output,min(length(output),q.limit))
+        top_level ? _query_budget_emit!(length(output)) : nothing
     else
         if isempty(q.orders)
             # Preserve the existing lazy-Limit behavior for queries without M:.
             stop = q.limit === nothing ? length(rows) : min(length(rows),q.limit)
             for i in 1:stop
+                _query_budget_tick!()
+                top_level ? _query_budget_emit!() : _query_budget_work!()
                 push!(output,Cell[evaluate(e,rows[i],schema) for e in bound])
             end
         else
             # M: must see the whole filtered source before Limit is applied.
             rows = order_source_rows(rows,q.orders,bound_orders,schema)
-            for row in rows
+            stop = q.limit === nothing ? length(rows) : min(length(rows),q.limit)
+            for row in rows[1:stop]
+                _query_budget_tick!()
+                top_level ? _query_budget_emit!() : _query_budget_work!()
                 push!(output,Cell[evaluate(e,row,schema) for e in bound])
             end
         end
     end
-    q.limit === nothing || resize!(output,min(length(output),q.limit))
-    QueryResult(labels,output)
+    if !top_level
+        # A view result is an intermediate relation inside the same server
+        # request; its rows were already charged as work above.
+        _query_budget_leave!()
+    end
+    result = QueryResult(labels,output)
+    top_level && _query_budget_leave!()
+    result
 end
 
 """Stream a simple single-table SELECT from bounded ARSP-4 heap batches.
@@ -131,7 +229,9 @@ function select_page_store_stream(store::PageStore,db::Database,name::String,q::
         batch = next_page_store_batch!(cursor)
         batch === nothing && break
         for row in batch
+            _query_budget_tick!()
             filter_matches(condition,row,schema) || continue
+            _query_budget_emit!()
             push!(output,Cell[evaluate(expression,row,schema) for expression in bound])
             q.limit === nothing || length(output) < q.limit || return QueryResult(labels,output)
         end
@@ -213,17 +313,17 @@ function select_page_store_index_stream(store::PageStore,db::Database,name::Stri
     condition = bind_condition(q.condition,schema)
     output = Row[]
     q.limit == 0 && return QueryResult(labels,output)
-    # Keep the store stable while a multi-batch B+Tree traversal emits ordered
-    # rows; this is a physical latch protocol, separate from MVCC visibility.
-    lock(store.mutex) do
-        while true
-            batch = next_page_store_index_batch!(cursor)
-            batch === nothing && break
-            for row in batch
-                filter_matches(condition,row,schema) || continue
-                push!(output,Cell[evaluate(expression,row,schema) for expression in bound])
-                q.limit === nothing || length(output) < q.limit || return QueryResult(labels,output)
-            end
+    # The cursor batch API owns the WAL/store lock for each physical request;
+    # do not hold the store latch across a call that reacquires WAL first.
+    while true
+        batch = next_page_store_index_batch!(cursor)
+        batch === nothing && break
+        for row in batch
+            _query_budget_tick!()
+            filter_matches(condition,row,schema) || continue
+            _query_budget_emit!()
+            push!(output,Cell[evaluate(expression,row,schema) for expression in bound])
+            q.limit === nothing || length(output) < q.limit || return QueryResult(labels,output)
         end
     end
     QueryResult(labels,output)

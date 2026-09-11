@@ -47,6 +47,49 @@ query(server, token, text) = request_json("POST", server_url(server) * "/query",
     @test TinyServerConfig().max_request_body == 8 * 1024 * 1024
     @test TinyServerConfig().max_sessions == 64
     @test TinyServerConfig().idle_timeout == 600.0
+    @test TinyServerConfig().max_result_rows == 100_000
+    @test TinyServerConfig().max_query_seconds == 30.0
+    @test TinyServerConfig().max_response_body == 64 * 1024 * 1024
+    @test !TinyServerConfig().allow_insecure_network
+
+    @testset "network binding and query result limits" begin
+        mktempdir() do directory
+            @test_throws AiresError start_tinyserver(TinyServerConfig(host="0.0.0.0",
+                port=rand(25_000:49_000), data_root=directory); password=PASSWORD)
+
+            server = start_fixture(directory; max_result_rows=1)
+            try
+                _, logged_in = login(server)
+                token = String(logged_in["session"])
+                query(server, token, "Buat 'Limited' -:")
+                query(server, token, "Buat Tabel 'T' Isi 'Id' Dengan 'Id = I(P)' -:")
+                query(server, token, "Isi Tabel 'T' '1' '2' -:")
+                status, limited = query(server, token, "Tampilkan 'T' -:")
+                @test status == 429
+                @test limited["error"]["code"] == "A1005"
+                @test limited["error"]["category"] == "Resource Limit"
+            finally
+                stop_tinyserver!(server)
+            end
+
+            server = start_fixture(directory; max_result_rows=1_000, max_query_seconds=1e-9)
+            try
+                _, logged_in = login(server)
+                token = String(logged_in["session"])
+                query(server, token, "Pilih 'Limited' -:")
+                for index in 3:70
+                    insert_status, _ = query(server, token, "Isi Tabel 'T' '$index' -:")
+                    @test insert_status == 200
+                end
+                status, timed_out = query(server, token, "Tampilkan 'T' -:")
+                @test status == 429
+                @test timed_out["error"]["code"] == "A1005"
+                @test timed_out["error"]["category"] == "Resource Limit"
+            finally
+                stop_tinyserver!(server)
+            end
+        end
+    end
 
     @testset "credentials, health, sessions, values, persistence" begin
         mktempdir() do directory
