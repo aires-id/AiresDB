@@ -36,9 +36,42 @@ mutable struct Engine
     mutex::ReentrantLock
     active_sessions::Int
 end
+
+# Path-based maintenance APIs (restore/compact) must see Engines that were not
+# created by the same caller. Weak references keep this process-local registry
+# from extending an Engine's lifetime after an application drops it.
+const _ENGINE_REGISTRY_LOCK = ReentrantLock()
+const _ENGINE_REGISTRY = WeakRef[]
+
+function _engine_path_key(path::AbstractString)
+    normalized = normpath(abspath(String(path)))
+    Sys.iswindows() ? lowercase(normalized) : normalized
+end
+
+function _register_engine!(engine::Engine)
+    lock(_ENGINE_REGISTRY_LOCK) do
+        filter!(reference -> reference.value !== nothing, _ENGINE_REGISTRY)
+        any(reference -> reference.value === engine, _ENGINE_REGISTRY) || push!(_ENGINE_REGISTRY,WeakRef(engine))
+    end
+    engine
+end
+
+function _engine_uses_path(path::AbstractString)
+    target = _engine_path_key(path)
+    lock(_ENGINE_REGISTRY_LOCK) do
+        for reference in _ENGINE_REGISTRY
+            engine = reference.value
+            engine === nothing && continue
+            engine.active_sessions > 0 || continue
+            any(handle -> _engine_path_key(handle.path) == target, values(engine.handles)) && return true
+        end
+        false
+    end
+end
+
 function Engine(root::AbstractString=pwd())
     mkpath(root)
-    Engine(realpath(root),Dict{String,DatabaseHandle}(),ReentrantLock(),0)
+    _register_engine!(Engine(realpath(root),Dict{String,DatabaseHandle}(),ReentrantLock(),0))
 end
 
 mutable struct TransactionState

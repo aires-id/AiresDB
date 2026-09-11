@@ -22,6 +22,9 @@ const A = AiresDB
         scripted = backup_database!(root,"Bank",scripted_artifact)
         @test scripted.bytes == result.bytes
 
+        @test_throws AiresError restore_database!(root,"Bank",artifact;overwrite=true)
+        @test_throws AiresError restore_database!(joinpath(root,"wrong-name"),"Other",artifact)
+
         execute!(source,"Tabel_Upt 'T' Isi 'Value = 20' Dengan 'ID = 1' -:")
         close(source)
 

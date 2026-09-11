@@ -55,6 +55,25 @@ mutable struct PageStore
     # process-local store.  The physical manager may close only after the last
     # handle releases its lease.
     leases::Int
+    # Identity of the sidecar file currently opened by this manager. A
+    # replacement performed by another process must invalidate this handle
+    # even when the WAL identity/LSN happens to be unchanged.
+    page_device::UInt64
+    page_inode::UInt64
+end
+
+function _page_store_signature(path::AbstractString)
+    info = stat(path)
+    (UInt64(info.device),UInt64(info.inode))
+end
+
+function _page_store_path_current(store::PageStore)
+    try
+        device,inode = _page_store_signature(store.page_path)
+        device == store.page_device && inode == store.page_inode
+    catch
+        false
+    end
 end
 
 mutable struct PageStoreScanCursor
@@ -404,7 +423,7 @@ function _page_store_create(wal_path::String,db::Database,file_id::Vector{UInt8}
     pool = BufferPool(manager;capacity=buffer_pages)
     catalog = new_page!(pool,PageTypeCatalog;page_lsn=lsn)
     store = PageStore(wal_path,page_path,manager,pool,catalog.page_id,Dict{String,PageTableStore}(),
-        UInt8[],0,0,csn,RollingScheduler(),ReentrantLock(),0,false,0)
+        UInt8[],0,0,csn,RollingScheduler(),ReentrantLock(),0,false,0,0,0)
     try
         # A zero-LSN catalog makes an interrupted initial build explicitly stale.
         lock(catalog.latch)
@@ -426,6 +445,7 @@ function _page_store_create(wal_path::String,db::Database,file_id::Vector{UInt8}
         store.applied_file_id = copy(file_id)
         store.applied_lsn = lsn
         store.applied_csn = csn
+        store.page_device,store.page_inode = _page_store_signature(page_path)
         store
     catch
         close(manager)
@@ -439,7 +459,7 @@ function _page_store_open_existing(wal_path::String,db::Database,file_id::Vector
     manager = open_page_manager(page_path;page_size=PAGE_SIZE,durable_lsn=lsn)
     pool = BufferPool(manager;capacity=buffer_pages)
     store = PageStore(wal_path,page_path,manager,pool,UInt64(1),Dict{String,PageTableStore}(),
-        UInt8[],0,0,0,RollingScheduler(),ReentrantLock(),0,false,0)
+        UInt8[],0,0,0,RollingScheduler(),ReentrantLock(),0,false,0,0,0)
     try
         catalog = read_page(manager,UInt64(1))
         metadata = _page_store_read_metadata(catalog)
@@ -478,6 +498,7 @@ function _page_store_open_existing(wal_path::String,db::Database,file_id::Vector
         store.applied_lsn = lsn
         store.applied_csn = csn
         store.base_csn = csn
+        store.page_device,store.page_inode = _page_store_signature(page_path)
         store
     catch
         close(manager)
@@ -534,7 +555,8 @@ function open_page_store!(wal_path::String,db::Database,file_id::Vector{UInt8},l
     end
 end
 
-function rebuild_page_store!(store::PageStore,db::Database,file_id::Vector{UInt8},lsn::UInt64,csn::UInt64)
+function rebuild_page_store!(store::PageStore,db::Database,file_id::Vector{UInt8},lsn::UInt64,csn::UInt64;
+                             force::Bool=false)
     with_wal_lock(store.wal_path) do
         lock(store.mutex) do
             capacity = length(store.pool.frames)
@@ -543,7 +565,8 @@ function rebuild_page_store!(store::PageStore,db::Database,file_id::Vector{UInt8
             # deleting it is both unnecessary and invalid on Windows while the
             # writer still owns an open manager.
             close(store.manager) # Drop only this stale handle's dirty cache.
-            fresh = _page_store_open_existing(store.wal_path,db,file_id,lsn,csn;buffer_pages=capacity)
+            fresh = force ? nothing :
+                _page_store_open_existing(store.wal_path,db,file_id,lsn,csn;buffer_pages=capacity)
             if fresh === nothing
                 # WAL is authoritative. A sidecar that did not publish its catalog
                 # cannot be trusted and is rebuilt only after our manager is closed.
@@ -562,6 +585,8 @@ function rebuild_page_store!(store::PageStore,db::Database,file_id::Vector{UInt8
             store.base_csn = fresh.base_csn
             store.scheduler = fresh.scheduler
             store.catalog_dirty = fresh.catalog_dirty
+            store.page_device = fresh.page_device
+            store.page_inode = fresh.page_inode
             store.rebuilds += UInt64(1)
             store
         end
@@ -570,7 +595,8 @@ end
 
 function page_store_synchronize!(store::PageStore,db::Database,file_id::Vector{UInt8},lsn::UInt64,csn::UInt64)
     with_wal_lock(store.wal_path) do
-        (store.applied_file_id == file_id && store.applied_lsn == lsn && store.applied_csn == csn) && return store
+        (store.applied_file_id == file_id && store.applied_lsn == lsn && store.applied_csn == csn &&
+         _page_store_path_current(store)) && return store
         rebuild_page_store!(store,db,file_id,lsn,csn)
     end
 end

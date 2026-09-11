@@ -126,7 +126,12 @@ function _native_backup_materialize(backup::String,directory::String)
         receipt.file_id == metadata.file_id || storageerror("Identitas WAL backup tidak cocok.")
         receipt.lsn == metadata.lsn || storageerror("LSN WAL backup tidak cocok.")
         receipt.end_offset == metadata.payload_length || storageerror("Panjang WAL backup tidak cocok.")
-        (temporary=temporary,metadata=metadata)
+        isempty(receipt.records) && storageerror("Backup WAL tidak memiliki checkpoint.")
+        checkpoint = IOBuffer(first(receipt.records).payload)
+        get_u8(checkpoint) == 1 || storageerror("Record pertama backup bukan checkpoint.")
+        get_u64(checkpoint); get_u64(checkpoint)
+        embedded_name = decode_database(BinaryRowStore(),get_blob(checkpoint)).name
+        (temporary=temporary,metadata=metadata,database=embedded_name)
     catch
         output_open && close(output)
         isfile(temporary) && rm(temporary;force=true)
@@ -137,6 +142,8 @@ function _native_backup_materialize(backup::String,directory::String)
 end
 
 function _native_backup_restore_guard(path::String)
+    _engine_uses_path(path) &&
+        storageerror("Tutup semua session sebelum restore database '$path'.")
     key = _page_store_registry_key(page_store_path(path))
     store = lock(_PAGE_STORE_REGISTRY_LOCK) do
         get(_PAGE_STORE_REGISTRY,key,nothing)
@@ -211,6 +218,8 @@ function restore_database!(root::AbstractString,database::AbstractString,backup:
         materialized = _native_backup_materialize(backup_path,dirname(target))
         temporary = materialized.temporary
         metadata = materialized.metadata
+        materialized.database == name ||
+            storageerror("Nama database backup '$(materialized.database)' tidak cocok dengan target '$name'.")
         with_wal_lock(target) do
             isfile(target) && !overwrite && storageerror("Database '$name' dibuat proses lain saat restore.")
             durable_replace(temporary,target;replace=overwrite && isfile(target))

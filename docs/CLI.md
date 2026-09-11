@@ -14,8 +14,12 @@ dan dapat dimatikan dengan `--no-banner`. Prompt awal adalah
 Statement multiline memakai prompt `->` dan wajib berakhir dengan `-:`.
 
 Perintah monitor: `.help`, `.databases`, `.tables`, `.schema Nama`, `.current`,
-`.mvcc`, `.checkpoint`, `.vacuum`, `.cancel`, dan `.exit`. Perintah engine
+`.mvcc`, `.checkpoint`, `.vacuum`, `.compact`, `.cancel`, dan `.exit`. Perintah engine
 dikirim lewat session server. `.exit` menghapus session.
+
+`.vacuum` membersihkan history MVCC secara logis. `.compact` melakukan rebuild
+fisik `.aires.pages` dan membutuhkan database maintenance dengan satu session
+aktif serta satu proses AiresDB.
 
 Jika server tidak tersedia, CLI mencetak `ERROR A1000`, keluar non-zero, dan tidak
 membuka file database lokal.

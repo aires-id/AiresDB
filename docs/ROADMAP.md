@@ -13,7 +13,7 @@ bukan fitur yang sudah tersedia.
 | WAL/durability | Embedded WAL, checksum, LSN, OS sync, torn-tail recovery, native checksummed backup/atomic restore | WAL archival, observability I/O |
 | MVCC | snapshot COW, row version stamp/history, serializable certification | predicate/range tracking lebih presisi, public time travel bila ada kontrak retention |
 | Concurrency | shared Engine, multiprocess advisory lock, incremental refresh | stress lebih panjang, fairness/backoff, cancellation |
-| Storage | page manager 8 KiB, slotted heap, RID, bounded Clock buffer pool, WAL page-LSN guard, scheduler 4 lane, async P2 cache miss | multi-page catalog, physical vacuum/free-space map, physical snapshot history tanpa fallback legacy, async P3 traversal |
+| Storage | page manager 8 KiB, slotted heap, RID, bounded Clock buffer pool, WAL page-LSN guard, scheduler 4 lane, async P2 cache miss, offline physical PageStore compact/rebuild | multi-page catalog, online vacuum/free-space map, physical snapshot history tanpa fallback legacy, async P3 traversal |
 | Index | hash compatibility index plus persistent B+Tree untuk primary/unique current snapshot dan `M:` yang eligible, bottom-up bulk load | secondary index umum, delete rebalance, B-link/latch coupling |
 | Analitik | generic relational API, predicate pushdown aman, dan 22 query TPC-H-derived | statistik, spilling, parallel execution |
 | AiresQL query | kondisi `&:`/`O:`, pengurutan stabil `M:` dengan `Atas`/`Bawah`, serta Limit setelah urut | alias, IS NULL, HAVING, foreign key, prepared query |
@@ -27,8 +27,9 @@ bukan fitur yang sudah tersedia.
 2. **Migrasi operator fisik.** Jadikan join, aggregate, group, predicate range,
    dan mixed-order traversal berbasis page/batch sambil mempertahankan AiresQL.
 3. **Catalog dan reclaim.** Pecah katalog PageStore ke beberapa page, tambahkan
-   vacuum/recycle page aman-WAL, generation sidecar yang tidak berbenturan dengan
-   handle proses lain, dan tooling inspect/repair format.
+   online vacuum/recycle page aman-WAL, generation sidecar yang tidak berbenturan
+   dengan handle proses lain, dan tooling inspect/repair format. Offline compact
+   dan sidecar replacement detection sudah tersedia sebagai baseline maintenance.
 4. **B+Tree concurrency.** Tambahkan delete rebalance, root shrink, secondary
    index umum, dan protocol B-link atau latch coupling.
 5. **Planner dan optimizer.** Statistik, predicate/projection pushdown, pilihan
@@ -37,8 +38,9 @@ bukan fitur yang sudah tersedia.
    bertipe, bulk import, dan CSV.
 7. **Operational tooling.** inspect WAL, maintenance scheduling, metrics, dan
    migration dry-run.
-8. **Server mode.** Authentication, authorization, quota, cancellation, protocol,
-   TLS, dan lifecycle transaksi sebelum menawarkan akses jaringan.
+8. **Server mode.** RBAC, rate limiting/audit, protocol, TLS, dan lifecycle
+   transaksi sebelum menawarkan akses jaringan yang lebih luas. Authentication,
+   query quota/cancellation guard, dan explicit non-loopback opt-in sudah ada.
 
 ## Gate kualitas untuk fitur storage berikutnya
 

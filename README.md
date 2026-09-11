@@ -38,6 +38,8 @@ menyediakan antarmuka resmi melalui **TinyServer HTTP/JSON** serta monitor CLI.
   floating-point pada API JSON;
 - **satu jalur akses resmi** melalui TinyServer, sehingga client tidak membuka
   file database sebagai fallback;
+- **resource guard server** untuk membatasi waktu query, jumlah row hasil, dan
+  ukuran response JSON;
 - **suite correctness, recovery, concurrency, dan benchmark** yang dapat
   dijalankan ulang dari repository.
 
@@ -115,7 +117,20 @@ AiresDB.restore_database!("./data", "Perusahaan", "./backup/Perusahaan.aires.bak
 ```
 
 Hasil backup sudah divalidasi dari header, ukuran, checksum, dan seluruh frame
-WAL sebelum dianggap berhasil.
+WAL sebelum dianggap berhasil. Nama database di dalam backup harus sama dengan
+nama target restore; ini mencegah backup tertukar secara diam-diam.
+
+Untuk reclaim fisik `.aires.pages` setelah banyak update/delete, jalankan
+maintenance saat hanya ada satu session dan satu proses AiresDB yang aktif:
+
+```julia
+using AiresDB
+AiresDB.compact_page_store!("./data", "Perusahaan")
+```
+
+`vacuum!`/`.vacuum` tetap membersihkan history MVCC secara logis. Compact fisik
+adalah operasi maintenance terpisah dan dapat mengganti sidecar dari WAL yang
+authoritative.
 
 ## AiresQL dalam satu menit
 
@@ -247,7 +262,8 @@ direproduksi memakai [harness SDEBO](Standard%20Database%20for%20Banking%20and%2
 
 Gunakan rilis ini dengan satu shared `Engine` per data root di dalam proses
 server, backup native yang sudah diuji restore, penyimpanan lokal yang
-mendukung durable flush, dan TinyServer pada loopback atau LAN tepercaya.
+mendukung durable flush, dan TinyServer pada loopback. Akses LAN hanya setelah
+memilih `--allow-insecure-network` di belakang firewall atau TLS reverse proxy.
 
 Pekerjaan utama sebelum rekomendasi produksi finansial:
 
@@ -265,10 +281,10 @@ dan migrasi format legacy bersifat satu arah. Baca
 ## Keamanan dan operasi
 
 TinyServer bind ke loopback secara default. Binding non-loopback harus dipilih
-eksplisit dan memerlukan firewall/LAN tepercaya atau TLS reverse proxy. TinyServer
-belum menyediakan TLS sendiri. Password `root` disimpan sebagai hash
-PBKDF2-HMAC-SHA256 dengan salt acak; token session berasal dari random source
-sistem operasi.
+eksplisit dengan `--allow-insecure-network` dan memerlukan firewall/LAN
+tepercaya atau TLS reverse proxy. TinyServer belum menyediakan TLS, RBAC, atau
+audit log sendiri. Password `root` disimpan sebagai hash PBKDF2-HMAC-SHA256
+dengan salt acak; token session berasal dari random source sistem operasi.
 
 Default resource limit:
 
@@ -277,6 +293,9 @@ Default resource limit:
 | Request body | 8 MiB |
 | Active sessions | 64 |
 | Idle session timeout | 10 menit |
+| Query result rows | 100.000 |
+| Query execution time | 30 detik |
+| JSON response body | 64 MiB |
 
 Laporkan kerentanan sesuai [SECURITY.md](SECURITY.md).
 

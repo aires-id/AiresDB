@@ -55,6 +55,12 @@ const PST = AiresDB
         @test PST.page_store_lookup(store,handle.current.tables["Data"],(Int64(2),),handle.csn) == PST.Cell[2,"Dua"]
         execute!(session,"Baris_Rmv 'Data' Dengan 'ID = 1' -:")
         @test PST.page_store_scan_rows(store,"Data",handle.csn) == PST.Row[PST.Cell[2,"Dua"]]
+        physical_size_before = filesize(path * ".pages")
+        compact_page_store!(session)
+        physical_size_after = filesize(path * ".pages")
+        @test physical_size_after <= physical_size_before
+        @test PST.page_store_stats(store).rebuilds >= 1
+        @test execute!(session,"Tampilkan 'Data' -:").rows == PST.Row[PST.Cell[2,"Dua"]]
         checkpoint!(session)
 
         reopened = Session(dir)

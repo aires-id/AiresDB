@@ -62,11 +62,15 @@ LSN/CSN, and table-to-heap/index metadata.
 
 The current PageStore catalog is one slotted 8 KiB page. A database whose table
 and index metadata does not fit receives an explicit storage error; there is no
-silent overflow to a `Dict` or an unversioned auxiliary file. The page manager
-has a free-list primitive, but PageStore does not yet physically reclaim old heap
-versions, B+Tree delete space, or superseded build pages. `vacuum!` only removes
-logical MVCC history that no active snapshot needs; it does not compact or shrink
-`.aires.pages`.
+silent overflow to a `Dict` or an unversioned auxiliary file. Normal commits
+remain append-oriented, so superseded heap/index pages can make `.aires.pages`
+grow. `vacuum!` only removes logical MVCC history that no active snapshot needs.
+
+`compact_page_store!(session)` or the path overload rebuilds the derived sidecar
+from the current authoritative WAL state and reclaims superseded physical
+pages. It requires one active session and one local PageStore lease; stop other
+AiresDB processes using the database before running it. If replacement fails,
+the WAL remains authoritative and the sidecar can be rebuilt on the next open.
 
 ## Slotted pages and RID
 

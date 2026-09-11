@@ -187,6 +187,7 @@ function evaluate(e::ExprNode, row::Row, schema::Vector{BoundColumn}, group::Uni
             integer_mode = true
             count = Int64(0)
             for row in group
+                _query_budget_tick!()
                 value = evaluate(arg,row,schema)
                 value === nothing && continue
                 if integer_mode && value isa Int64
@@ -212,6 +213,7 @@ function evaluate(e::ExprNode, row::Row, schema::Vector{BoundColumn}, group::Uni
         elseif e.name in (:min,:max)
             best::Cell = nothing
             for row in group
+                _query_budget_tick!()
                 value = evaluate(arg,row,schema)
                 value === nothing && continue
                 if best === nothing || compare_values(e.name == :min ? :lt : :gt,value,best) === true
