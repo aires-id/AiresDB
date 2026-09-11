@@ -137,6 +137,15 @@ function delete_key!(session::Session,name::String,key)
 end
 
 function point_key(condition::Union{Nothing,ExprNode},table::Table)
+    # A primary-key equality remains a safe point lookup when it is one atom
+    # of a conjunction.  The complete WHERE expression is still evaluated by
+    # select_rows after the tiny candidate is fetched, so NULL/false residual
+    # predicates keep their normal SQL semantics.
+    if condition isa LogicalAnd
+        left = point_key(condition.left,table)
+        left !== nothing && return left
+        return point_key(condition.right,table)
+    end
     condition isa BinaryExpr && condition.op == :eq || return nothing
     pk = primary_spec(table); length(pk) == 1 || return nothing
     a = condition.left; b = condition.right

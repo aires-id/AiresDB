@@ -30,7 +30,7 @@ menyediakan antarmuka resmi melalui **TinyServer HTTP/JSON** serta monitor CLI.
 
 - **AiresQL berbahasa Indonesia** dengan terminator `-:` dan input multiline;
 - **ACID dan durability** melalui embedded WAL, checksum, OS sync, checkpoint,
-  serta torn-tail recovery;
+  native backup/restore, serta torn-tail recovery;
 - **optimistic serializable MVCC**, read-your-writes, dan first-committer-wins;
 - **storage page-based ARSP-4** dengan page 8 KiB, slotted heap, RID, bounded
   Clock buffer pool, dan persistent B+Tree;
@@ -45,35 +45,43 @@ menyediakan antarmuka resmi melalui **TinyServer HTTP/JSON** serta monitor CLI.
 
 AiresDB membutuhkan **Julia 1.12**.
 
-Setelah AiresDB tersedia di registry General, pasang paketnya sekali:
-
-```sh
-julia -e 'using Pkg; Pkg.add("AiresDB")'
-```
-
-Jalankan server:
-
-```sh
-julia -m AiresDB server
-```
-
-Pada start pertama, server meminta password untuk user `root`. TinyServer bind
-ke `127.0.0.1:1972` dan menyimpan data di `./data` secara default.
-
-Buka terminal kedua untuk menjalankan monitor:
-
-```sh
-julia -m AiresDB -u root -p
-```
-
-Untuk mendapat perintah terminal `airesdb`, pasang AiresDB sebagai Julia app:
+> **Instalasi satu perintah:** setelah rilis tersedia di General, pasang app
+> `airesdb` dengan `Pkg.Apps.add`. App ini sekaligus menyediakan package dan
+> executable CLI.
 
 ```sh
 julia -e 'using Pkg; Pkg.Apps.add("AiresDB")'
 ```
 
-Tambahkan `~/.julia/bin` ke `PATH`, lalu gunakan `airesdb server` dan
-`airesdb -u root -p`. Dukungan app di Julia 1.12 masih berstatus eksperimental.
+Sebelum masuk General, gunakan URL GitHub:
+
+```sh
+julia -e 'using Pkg; Pkg.Apps.add(url="https://github.com/aires-id/AiresDB")'
+```
+
+Jalankan server di terminal pertama:
+
+```sh
+airesdb server
+```
+
+Pada start pertama, server meminta password untuk user `root`. TinyServer bind
+ke `127.0.0.1:1972` dan menyimpan data di `./data` secara default.
+
+Buka terminal kedua untuk menjalankan monitor dengan command yang tetap:
+
+```sh
+airesdb -u root -p
+```
+
+Linux/macOS perlu menambahkan `~/.julia/bin` ke `PATH`. Windows CMD dapat
+menambahkan `%USERPROFILE%\.julia\bin` untuk sesi terminal saat ini:
+
+```bat
+set "PATH=%PATH%;%USERPROFILE%\.julia\bin"
+```
+
+Dukungan app di Julia 1.12 masih berstatus eksperimental.
 
 Selama paket belum masuk General, instalasi langsung dari GitHub tersedia di
 [petunjuk instalasi](INSTALL.md). Untuk pengembangan dari checkout:
@@ -82,6 +90,32 @@ Selama paket belum masuk General, instalasi langsung dari GitHub tersedia di
 julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.precompile()"
 julia --project=. -m AiresDB server
 ```
+
+## Backup dan restore native
+
+Backup native mengambil prefix WAL yang konsisten di bawah lock, menghitung
+SHA-256, lalu mempublikasikannya secara atomic. Sidecar `.aires.pages` tidak
+disalin karena hanya cache turunan; sidecar akan dibangun ulang saat database
+hasil restore dibuka.
+
+Untuk job maintenance atau cron, gunakan API path-based:
+
+```sh
+julia --project=. -e 'using AiresDB; AiresDB.backup_database!("./data", "Perusahaan", "./backup/Perusahaan.aires.bak")'
+julia --project=. -e 'using AiresDB; AiresDB.restore_database!("./data-restored", "Perusahaan", "./backup/Perusahaan.aires.bak")'
+```
+
+Restore ke database yang sudah ada membutuhkan `overwrite=true` dan seluruh
+session/proses yang memakai target harus dihentikan terlebih dahulu:
+
+```julia
+using AiresDB
+AiresDB.restore_database!("./data", "Perusahaan", "./backup/Perusahaan.aires.bak";
+    overwrite=true)
+```
+
+Hasil backup sudah divalidasi dari header, ukuran, checksum, dan seluruh frame
+WAL sebelum dianggap berhasil.
 
 ## AiresQL dalam satu menit
 
@@ -186,11 +220,12 @@ Interpretasi hasil ini mempunyai batas penting:
 - host mempunyai 4 logical CPU, di bawah rekomendasi dokumen 8 thread;
 - hard power-off VM tidak tersedia, sehingga tiap engine diuji dengan lima
   external process termination;
-- AiresDB belum mempunyai backup native; R01 memakai offline checkpoint dan
-  file copy, sedangkan R02 diorkestrasi manual;
+- R01 dijalankan sebelum backup native tersedia sehingga memakai offline
+  checkpoint dan file copy; API native di source tree sekarang memvalidasi WAL
+  dan restore secara atomic;
 - percobaan T05 awal yang tidak diberi skor menemukan gangguan lifecycle ketika
   beberapa `Engine` terpisah dalam satu proses ditutup saat worker lain commit;
-  rerun yang dinilai menahan semua session sampai kerja selesai dan lulus;
+  ownership lease PageStore dan regression test sekarang menutup kasus itu;
 - label “Small Bank Technical PASS” adalah gate teknis SDEBO, bukan sertifikasi,
   audit keamanan, atau persetujuan penggunaan perbankan.
 
@@ -211,16 +246,16 @@ direproduksi memakai [harness SDEBO](Standard%20Database%20for%20Banking%20and%2
 ## Status v0.1.0
 
 Gunakan rilis ini dengan satu shared `Engine` per data root di dalam proses
-server, backup offline yang sudah diuji restore, penyimpanan lokal yang mendukung
-durable flush, dan TinyServer pada loopback atau LAN tepercaya.
+server, backup native yang sudah diuji restore, penyimpanan lokal yang
+mendukung durable flush, dan TinyServer pada loopback atau LAN tepercaya.
 
 Pekerjaan utama sebelum rekomendasi produksi finansial:
 
-1. memperbaiki kepemilikan lifecycle PageStore lintas beberapa `Engine`;
-2. menyediakan backup/restore native, terotomasi, dan terverifikasi;
-3. menambah RBAC, rotasi credential, audit log, TLS, dan hardening jaringan;
-4. menekan penggunaan memory dan tail latency pada soak serta mixed workload;
-5. memperluas stress, fault injection, hard power-off, dan audit eksternal.
+1. memperluas stress concurrency, fault injection, hard power-off, dan audit
+   eksternal;
+2. menambah RBAC, rotasi credential, audit log, TLS, dan hardening jaringan;
+3. menekan penggunaan memory dan tail latency pada soak serta mixed workload;
+4. memperluas planner, physical operator, dan observability I/O.
 
 Binary format internal delta/checkpoint belum menjadi API eksternal yang stabil,
 dan migrasi format legacy bersifat satu arah. Baca

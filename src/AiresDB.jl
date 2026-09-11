@@ -14,7 +14,8 @@ using TOML
 using UUIDs
 
 export TinyServerConfig, TinyServer, start_tinyserver, stop_tinyserver!, server_url,
-       initialize_root_credentials!, tinyserver_handler, run_client, cli_main
+       initialize_root_credentials!, tinyserver_handler, run_client, cli_main,
+       backup_database!, restore_database!
 
 include("errors.jl")
 include("types.jl")
@@ -38,6 +39,7 @@ include("wal.jl")
 include("mvcc.jl")
 include("storage/pagestore.jl")
 include("transactions.jl")
+include("backup.jl")
 include("executor.jl")
 include("api.jl")
 include("relational.jl")

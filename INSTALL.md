@@ -3,6 +3,9 @@
 AiresDB membutuhkan Julia 1.12. Semua akses pengguna berlangsung melalui
 AiresDB TinyServer.
 
+Untuk pengalaman pengguna dengan satu executable, instal AiresDB sebagai Julia
+app. Setelah terpasang, command monitor tetap `airesdb -u root -p`.
+
 ## Instalasi dari General
 
 Setelah rilis `v0.1.0` masuk registry General, instal paket dengan salah satu
@@ -18,6 +21,13 @@ Atau langsung dari shell:
 
 ```sh
 julia -e 'using Pkg; Pkg.add("AiresDB")'
+```
+
+Windows Command Prompt memakai double quote di luar dan escape quote Julia di
+dalam:
+
+```bat
+julia -e "using Pkg; Pkg.add(\"AiresDB\")"
 ```
 
 Untuk Windows PowerShell 5, escape tanda kutip yang diteruskan ke Julia:
@@ -51,6 +61,12 @@ Perintah shell yang setara:
 julia -e 'using Pkg; Pkg.Apps.add("AiresDB")'
 ```
 
+Untuk Windows Command Prompt:
+
+```bat
+julia -e "using Pkg; Pkg.Apps.add(\"AiresDB\")"
+```
+
 Untuk Windows PowerShell 5:
 
 ```powershell
@@ -69,12 +85,20 @@ export PATH="$HOME/.julia/bin:$PATH"
 $env:Path += ";$HOME\.julia\bin"
 ```
 
+```bat
+:: Windows Command Prompt, untuk sesi saat ini
+set "PATH=%PATH%;%USERPROFILE%\.julia\bin"
+```
+
 Setelah itu jalankan:
 
 ```sh
 airesdb server
 airesdb -u root -p
 ```
+
+`airesdb server` dijalankan di terminal pertama. Command `airesdb -u root -p`
+adalah monitor client yang dijalankan di terminal kedua.
 
 Dukungan app di Pkg Julia 1.12 masih eksperimental. App memakai executable
 Julia yang dipakai saat instalasi; instal ulang app bila executable tersebut
@@ -94,6 +118,12 @@ Untuk Windows PowerShell 5:
 ```powershell
 julia -e 'using Pkg; Pkg.add(url=\"https://github.com/aires-id/AiresDB\")'
 julia -e 'using Pkg; Pkg.Apps.add(url=\"https://github.com/aires-id/AiresDB\")'
+```
+
+Untuk Windows Command Prompt:
+
+```bat
+julia -e "using Pkg; Pkg.Apps.add(url=\"https://github.com/aires-id/AiresDB\")"
 ```
 
 ## Pengembangan dari checkout

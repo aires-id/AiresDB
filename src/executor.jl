@@ -9,10 +9,59 @@ function source_rows(db::Database,name::String,stack::Set{String})
     select_rows(db,db.views[name].query,union(stack,Set([name]))).rows
 end
 
+function _condition_sources!(sources::Set{String},expression::ExprNode,schema::Vector{BoundColumn})
+    if expression isa ColumnRef
+        push!(sources,schema[resolve_column(expression,schema)].source)
+    elseif expression isa UnaryExpr
+        _condition_sources!(sources,expression.operand,schema)
+    elseif expression isa BinaryExpr || expression isa LogicalAnd || expression isa LogicalOr
+        _condition_sources!(sources,expression.left,schema)
+        _condition_sources!(sources,expression.right,schema)
+    elseif expression isa CallExpr
+        for argument in expression.args
+            _condition_sources!(sources,argument,schema)
+        end
+    end
+    sources
+end
+
+function _condition_conjuncts(condition::ExprNode)
+    condition isa LogicalAnd ? vcat(_condition_conjuncts(condition.left),
+        _condition_conjuncts(condition.right)) : ExprNode[condition]
+end
+
+function _push_join_filters(condition::Union{Nothing,ExprNode},schema::Vector{BoundColumn},
+                            left_name::String,right_name::String)
+    left = ExprNode[]; right = ExprNode[]; residual = ExprNode[]
+    condition === nothing && return left,right,residual
+    for part in _condition_conjuncts(condition)
+        sources = _condition_sources!(Set{String}(),part,schema)
+        if isempty(sources) || sources == Set([left_name])
+            push!(left,part)
+        elseif sources == Set([right_name])
+            push!(right,part)
+        else
+            push!(residual,part)
+        end
+    end
+    left,right,residual
+end
+
+function _filter_source_rows(rows::Vector{Row},parts::Vector{ExprNode},schema::Vector{BoundColumn})
+    isempty(parts) && return rows
+    bound = [bind_condition(part,schema) for part in parts]
+    Row[row for row in rows if all(filter_matches(part,row,schema) for part in bound)]
+end
+
 function join_rows(db::Database,q::SelectQuery,schema::Vector{BoundColumn},stack::Set{String})
     leftrows = source_rows(db,q.sources[1],stack)
     length(q.sources) == 1 && return leftrows
     rightrows = source_rows(db,q.sources[2],stack)
+    leftschema = BoundColumn[c for c in schema if c.source == q.sources[1]]
+    rightschema = BoundColumn[c for c in schema if c.source == q.sources[2]]
+    leftfilters,rightfilters,_ = _push_join_filters(q.condition,schema,q.sources[1],q.sources[2])
+    leftrows = _filter_source_rows(leftrows,leftfilters,leftschema)
+    rightrows = _filter_source_rows(rightrows,rightfilters,rightschema)
     nleft = count(c->c.source == q.sources[1],schema)
     condition = q.join_condition::BinaryExpr
     i = resolve_column(condition.left,schema); j = resolve_column(condition.right,schema)
@@ -213,17 +262,15 @@ function select_page_store_index_stream(store::PageStore,db::Database,name::Stri
     condition = bind_condition(q.condition,schema)
     output = Row[]
     q.limit == 0 && return QueryResult(labels,output)
-    # Keep the store stable while a multi-batch B+Tree traversal emits ordered
-    # rows; this is a physical latch protocol, separate from MVCC visibility.
-    lock(store.mutex) do
-        while true
-            batch = next_page_store_index_batch!(cursor)
-            batch === nothing && break
-            for row in batch
-                filter_matches(condition,row,schema) || continue
-                push!(output,Cell[evaluate(expression,row,schema) for expression in bound])
-                q.limit === nothing || length(output) < q.limit || return QueryResult(labels,output)
-            end
+    # The cursor batch API owns the WAL/store lock for each physical request;
+    # do not hold the store latch across a call that reacquires WAL first.
+    while true
+        batch = next_page_store_index_batch!(cursor)
+        batch === nothing && break
+        for row in batch
+            filter_matches(condition,row,schema) || continue
+            push!(output,Cell[evaluate(expression,row,schema) for expression in bound])
+            q.limit === nothing || length(output) < q.limit || return QueryResult(labels,output)
         end
     end
     QueryResult(labels,output)

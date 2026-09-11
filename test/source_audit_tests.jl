@@ -15,6 +15,32 @@ function audit_table!(session)
 end
 
 @testset "Source audit regressions" begin
+    @testset "PageStore lease survives cross-engine close" begin
+        mktempdir() do root
+            first_session = Session(Engine(root))
+            SA.open_database!(first_session,"Leases";create=true)
+            audit_table!(first_session)
+            bulk_insert!(first_session,"T",[[1,10]])
+
+            second_session = Session(Engine(root))
+            SA.open_database!(second_session,"Leases")
+            first_store = first_session.handle.page_store::SA.PageStore
+            second_store = second_session.handle.page_store::SA.PageStore
+            @test first_store === second_store
+            @test first_store.leases == 2
+
+            close(first_session)
+            @test !second_store.manager.closed
+            @test second_store.leases == 1
+            @test update_key!(second_session,"T",1,Dict("Value"=>11)).rows[1][2] == 1
+            @test lookup(second_session,"T",1) == [1,11]
+
+            close(second_session)
+            @test second_store.manager.closed
+            SA._close_page_stores_under!(root)
+        end
+    end
+
     @testset "Cross-engine checkpoint history has one version per CSN" begin
         mktempdir() do root
             first_engine = Engine(root)

@@ -775,7 +775,13 @@ function Base.close(session::Session)
     for handle in handles_to_close
         lock(handle.mutex) do
             _wal_close_cached!(handle.path)
-            handle.page_store === nothing || close_page_store!(handle.page_store::PageStore)
+            if handle.page_store !== nothing
+                close_page_store!(handle.page_store::PageStore)
+                # The handle remains cached on Engine so a later Session can
+                # reuse it.  Drop the lease-bearing pointer; open_database!
+                # will acquire a fresh lease when that Session returns.
+                handle.page_store = nothing
+            end
         end
     end
     nothing

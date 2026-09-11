@@ -325,6 +325,13 @@ end
             q(s,"Isi Tabel 'Divisi' '1 & Teknik' '2 & Operasi' '2 & Tambahan' 'NULL & Kosong' -:")
             joined = rows(s,"Pilih 'Karyawan.Nama && Divisi.NamaDivisi' Dari 'Karyawan &&& Divisi' Gabung Dengan 'Karyawan.DivisiID = Divisi.ID' -:")
             @test joined == [A.Cell["Aires","Teknik"],A.Cell["Fami","Operasi"],A.Cell["Fami","Tambahan"]]
+            planned = A.parse_airesql("Pilih '*' Dari 'Karyawan &&& Divisi' Gabung Dengan 'Karyawan.DivisiID = Divisi.ID' Dengan 'Karyawan.Gaji > 7000000 &: Divisi.ID = 1' -:")
+            planned_schema,_,_ = A.validate_query(s.database,planned)
+            left_filters,right_filters,residual = A._push_join_filters(planned.condition,planned_schema,"Karyawan","Divisi")
+            @test length(left_filters) == 1
+            @test length(right_filters) == 1
+            @test isempty(residual)
+            @test A.point_key(A.parse_expression("No = 2 &: Gaji > 1"),s.database.tables["Karyawan"]) == (2,)
             @test length(rows(s,"Pilih '*' Dari 'Karyawan &&& Divisi' Gabung Dengan 'Divisi.ID = Karyawan.DivisiID' Dengan 'Karyawan.Gaji > 7000000' -:")) == 1
             @test_throws AiresError q(s,"Pilih '*' Dari 'Karyawan &&& Divisi' -:")
             @test_throws AiresError q(s,"Pilih '*' Dari 'Karyawan &&& Divisi' Gabung Dengan 'Karyawan.DivisiID > Divisi.ID' -:")
@@ -496,6 +503,7 @@ include("wal_lowlevel.jl")
 include("benchmark_tests.jl")
 include("wal_mvcc_integration.jl")
 include("source_audit_tests.jl")
+include("backup_tests.jl")
 include("airesql_logical_order_tests.jl")
 include("arsp_storage_tests.jl")
 include("arsp_pipeline_tests.jl")
