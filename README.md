@@ -45,11 +45,16 @@ menyediakan antarmuka resmi melalui **TinyServer HTTP/JSON** serta monitor CLI.
 
 AiresDB membutuhkan **Julia 1.12**.
 
-Setelah repository ini di-clone, jalankan dari root checkout:
+Setelah AiresDB tersedia di registry General, pasang paketnya sekali:
 
 ```sh
-julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.precompile()"
-julia --project=. -m AiresDB server
+julia -e 'using Pkg; Pkg.add("AiresDB")'
+```
+
+Jalankan server:
+
+```sh
+julia -m AiresDB server
 ```
 
 Pada start pertama, server meminta password untuk user `root`. TinyServer bind
@@ -58,13 +63,25 @@ ke `127.0.0.1:1972` dan menyimpan data di `./data` secara default.
 Buka terminal kedua untuk menjalankan monitor:
 
 ```sh
-julia --project=. -m AiresDB -u root -p
+julia -m AiresDB -u root -p
 ```
 
-Project juga mendeklarasikan app Julia 1.12 bernama `airesdb`. Setelah app
-dipasang dan direktori app Julia tersedia di `PATH`, perintahnya menjadi
-`airesdb server` dan `airesdb -u root -p`. Petunjuk lengkap ada di
-[INSTALL.md](INSTALL.md).
+Untuk mendapat perintah terminal `airesdb`, pasang AiresDB sebagai Julia app:
+
+```sh
+julia -e 'using Pkg; Pkg.Apps.add("AiresDB")'
+```
+
+Tambahkan `~/.julia/bin` ke `PATH`, lalu gunakan `airesdb server` dan
+`airesdb -u root -p`. Dukungan app di Julia 1.12 masih berstatus eksperimental.
+
+Selama paket belum masuk General, instalasi langsung dari GitHub tersedia di
+[petunjuk instalasi](INSTALL.md). Untuk pengembangan dari checkout:
+
+```sh
+julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.precompile()"
+julia --project=. -m AiresDB server
+```
 
 ## AiresQL dalam satu menit
 

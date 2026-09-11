@@ -22,3 +22,7 @@ jobs:
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
       - name: Test
         run: julia --startup-file=no --threads=1 --project=. -e 'using Pkg; Pkg.test()'
+      - name: App entry point
+        run: |
+          julia --startup-file=no -e 'using Pkg; Pkg.Apps.develop(path=pwd())'
+          "$HOME/.julia/bin/airesdb" --help
