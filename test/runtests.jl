@@ -325,6 +325,19 @@ end
             q(s,"Isi Tabel 'Divisi' '1 & Teknik' '2 & Operasi' '2 & Tambahan' 'NULL & Kosong' -:")
             joined = rows(s,"Pilih 'Karyawan.Nama && Divisi.NamaDivisi' Dari 'Karyawan &&& Divisi' Gabung Dengan 'Karyawan.DivisiID = Divisi.ID' -:")
             @test joined == [A.Cell["Aires","Teknik"],A.Cell["Fami","Operasi"],A.Cell["Fami","Tambahan"]]
+            @test A._join_build_side([A.Cell[1]],[A.Cell[1],A.Cell[2]]) == :left
+            q(s,"Buat Tabel 'TinyLeft' Isi 'K' Dengan 'K = I' -:")
+            q(s,"Buat Tabel 'WideRight' Isi 'K & V' Dengan 'K = I & V = C' -:")
+            q(s,"Isi Tabel 'TinyLeft' '2' '1' -:")
+            q(s,"Isi Tabel 'WideRight' '1 & satu' '2 & dua' '2 & dua-b' -:")
+            planned_join = rows(s,"Pilih 'TinyLeft.K && WideRight.V' Dari 'TinyLeft &&& WideRight' Gabung Dengan 'TinyLeft.K = WideRight.K' -:")
+            @test planned_join == [A.Cell[2,"dua"],A.Cell[2,"dua-b"],A.Cell[1,"satu"]]
+            q(s,"Buat Tabel 'IndexLeft' Isi 'K' Dengan 'K = I' -:")
+            q(s,"Buat Tabel 'IndexRight' Isi 'K & V' Dengan 'K = I(P) & V = C' -:")
+            q(s,"Isi Tabel 'IndexLeft' '2' '1' -:")
+            q(s,"Isi Tabel 'IndexRight' '1 & satu' '2 & dua' '3 & tiga' -:")
+            indexed_join = rows(s,"Pilih 'IndexLeft.K && IndexRight.V' Dari 'IndexLeft &&& IndexRight' Gabung Dengan 'IndexLeft.K = IndexRight.K' -:")
+            @test indexed_join == [A.Cell[2,"dua"],A.Cell[1,"satu"]]
             planned = A.parse_airesql("Pilih '*' Dari 'Karyawan &&& Divisi' Gabung Dengan 'Karyawan.DivisiID = Divisi.ID' Dengan 'Karyawan.Gaji > 7000000 &: Divisi.ID = 1' -:")
             planned_schema,_,_ = A.validate_query(s.database,planned)
             left_filters,right_filters,residual = A._push_join_filters(planned.condition,planned_schema,"Karyawan","Divisi")

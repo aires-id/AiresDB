@@ -167,12 +167,15 @@ tanggal/waktu bukan fungsi, dan tidak ada aritmetika tanggal atau casting umum.
 ## Urutan eksekusi SELECT
 
 1. Validasi sumber, kolom, tipe ekspresi, join, dan group, bahkan jika tabel kosong.
-2. Ambil row tabel atau jalankan kembali view.
-3. Bila dua sumber: lakukan hash INNER JOIN equality.
-4. Terapkan `Dengan` sebagai filter row.
-5. Bentuk group bila diperlukan; evaluasi aggregate dan proyeksi.
-6. Terapkan `M:` sebagai pengurutan stabil bila klausa ada.
-7. Terapkan Limit pada tabel hasil terurut.
+2. Pecah predicate `Dengan` yang hanya memakai satu sumber dan dorong ke sumbernya.
+3. Ambil row tabel atau jalankan kembali view setelah predicate sumber diterapkan.
+4. Bila dua sumber: gunakan unique-index probe bila cardinality-nya lebih murah;
+   jika tidak, pilih input dengan cardinality lebih kecil sebagai hash build side,
+   lalu lakukan hash INNER JOIN equality sambil mempertahankan urutan kiri.
+5. Terapkan residual `Dengan` sebagai filter row.
+6. Bentuk group bila diperlukan; evaluasi aggregate dan proyeksi.
+7. Terapkan `M:` sebagai pengurutan stabil bila klausa ada.
+8. Terapkan Limit pada tabel hasil terurut.
 
 `Gabung Dengan` menyatakan kondisi join. Klausa `Dengan` tambahan dapat digunakan
 untuk filter setelah join. Klausa tidak boleh berulang. Group boleh beberapa kolom
