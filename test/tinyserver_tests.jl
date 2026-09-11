@@ -10,12 +10,13 @@ using Random
 const TS = AiresDB
 const PASSWORD = "correct horse battery staple"
 
-function request_json(method, url, body=nothing)
-    headers = ["Content-Type" => "application/json"]
+function request_json(method, url, body=nothing; headers=Pair{String,String}[])
+    request_headers = ["Content-Type" => "application/json"]
+    append!(request_headers, headers)
     payload = body === nothing ? UInt8[] : Vector{UInt8}(codeunits(JSON3.write(body)))
     client = HTTP.Client()
     response = try
-        HTTP.request(client, method, url, headers, payload; status_exception=false, retry=false)
+        HTTP.request(client, method, url, request_headers, payload; status_exception=false, retry=false)
     finally
         close(client)
     end
@@ -39,7 +40,8 @@ function start_fixture(directory; kwargs...)
 end
 
 login(server; user="root", password=PASSWORD) = request_json("POST", server_url(server) * "/session", (; user, password))
-query(server, token, text) = request_json("POST", server_url(server) * "/query", (; session=token, query=text))
+query(server, token, text) = request_json("POST", server_url(server) * "/query", (; query=text);
+    headers=["Authorization" => "Bearer $token"])
 
 @testset "AiresDB TinyServer and mandatory client" begin
     @test TinyServerConfig().host == "127.0.0.1"
@@ -51,6 +53,11 @@ query(server, token, text) = request_json("POST", server_url(server) * "/query",
     @test TinyServerConfig().max_query_seconds == 30.0
     @test TinyServerConfig().max_response_body == 64 * 1024 * 1024
     @test !TinyServerConfig().allow_insecure_network
+    @test TinyServerConfig().tls_cert_file === nothing
+    @test TinyServerConfig().tls_key_file === nothing
+    @test TinyServerConfig().tls_min_version == HTTP.TLS.TLS1_3_VERSION
+    @test TinyServerConfig().audit_log_file == ".airesdb-audit.jsonl"
+    @test TinyServerConfig().max_failed_logins == 5
 
     @testset "network binding and query result limits" begin
         mktempdir() do directory
@@ -166,7 +173,8 @@ query(server, token, text) = request_json("POST", server_url(server) * "/query",
                 @test status == 200
                 @test occursin("Perusahaan.aires", databases["message"])
 
-                status, _ = request_json("DELETE", base * "/session/$token")
+                status, _ = request_json("DELETE", base * "/session";
+                    headers=["Authorization" => "Bearer $token"])
                 @test status == 200
                 status, invalid = query(server, token, "Tampilkan 'Nilai' -:")
                 @test status == 401
@@ -185,6 +193,94 @@ query(server, token, text) = request_json("POST", server_url(server) * "/query",
                 @test persisted["row_count"] == 3
             finally
                 stop_tinyserver!(restarted)
+            end
+        end
+    end
+
+    @testset "TLS, RBAC, login lockout and audit" begin
+        mktempdir() do directory
+            config = TinyServerConfig(port=rand(25_000:49_000), data_root=directory,
+                max_failed_logins=2, login_lockout_seconds=60.0)
+            initialize_root_credentials!(config, PASSWORD)
+            initialize_user_credentials!(config, "analyst", "reader password"; role=:reader)
+            server = start_tinyserver(config)
+            try
+                status, _ = login(server; user="analyst", password="wrong password")
+                @test status == 401
+                status, logged_in = login(server; user="analyst", password="reader password")
+                @test status == 201
+                reader_token = String(logged_in["session"])
+
+                status, _ = query(server, reader_token, ".databases")
+                @test status == 200
+                status, denied = query(server, reader_token, "Buat 'ReaderMustNotWrite' -:")
+                @test status == 403
+                @test denied["error"]["code"] == "A1006"
+                status, missing_auth = request_json("POST", server_url(server) * "/query",
+                    (; query=".current"))
+                @test status == 401
+                @test missing_auth["error"]["code"] == "A1002"
+                status, _ = request_json("DELETE", server_url(server) * "/session")
+                @test status == 401
+                status, _ = request_json("DELETE", server_url(server) * "/session";
+                    headers=["Authorization" => "Bearer $reader_token"])
+                @test status == 200
+
+                login(server; password="wrong password")
+                login(server; password="wrong password")
+                status, locked = login(server)
+                @test status == 401
+                @test locked["error"]["code"] == "A1001"
+                lock(server.mutex) do
+                    server.failed_logins["root"] = (2, time() - 1.0)
+                end
+                status, _ = login(server)
+                @test status == 201
+
+                audit_path = joinpath(directory, ".airesdb-audit.jsonl")
+                @test isfile(audit_path)
+                audit = read(audit_path, String)
+                @test occursin("login_success", audit)
+                @test occursin("authorization_denied", audit)
+                @test occursin("query_hash", audit)
+                @test !occursin("reader password", audit)
+                @test !occursin("ReaderMustNotWrite", audit)
+                @test !occursin(reader_token, audit)
+                @test all(line -> begin
+                    record = JSON3.read(line, Dict{String,Any})
+                    haskey(record, "timestamp") && haskey(record, "event") && haskey(record, "status")
+                end, filter(!isempty, split(audit, '\n')))
+            finally
+                stop_tinyserver!(server)
+            end
+        end
+
+        cert = normpath(joinpath(dirname(pathof(HTTP)), "..", "test", "resources", "unittests.crt"))
+        key = normpath(joinpath(dirname(pathof(HTTP)), "..", "test", "resources", "unittests.key"))
+        @test isfile(cert)
+        @test isfile(key)
+        mktempdir() do directory
+            @test_throws ArgumentError start_tinyserver(TinyServerConfig(
+                port=rand(25_000:49_000), data_root=directory, tls_cert_file=cert);
+                password=PASSWORD)
+            config = TinyServerConfig(host="127.0.0.1", port=rand(25_000:49_000),
+                data_root=directory, tls_cert_file=cert, tls_key_file=key)
+            server = start_tinyserver(config; password=PASSWORD)
+            client = nothing
+            try
+                @test startswith(server_url(server), "https://")
+                # The bundled HTTP fixture certificate is intentionally old on
+                # future-dated CI machines; the server-side TLS handshake is
+                # what this regression covers.
+                tls_config = HTTP.TLS.Config(verify_peer=false, verify_hostname=false,
+                    min_version=HTTP.TLS.TLS1_3_VERSION)
+                client = HTTP.Client(transport=HTTP.Transport(tls_config=tls_config))
+                response = HTTP.request(client, "GET", server_url(server) * "/health";
+                    status_exception=false, retry=false)
+                @test response.status == 200
+            finally
+                client === nothing || close(client)
+                stop_tinyserver!(server)
             end
         end
     end
@@ -214,7 +310,8 @@ query(server, token, text) = request_json("POST", server_url(server) * "/query",
                 query(server, third, "Pilih 'Bank' -:")
                 query(server, third, "Transaksi -:")
                 query(server, third, "Isi Tabel 'Rekening' '2 & 50.00' -:")
-                request_json("DELETE", server_url(server) * "/session/$third")
+                request_json("DELETE", server_url(server) * "/session";
+                    headers=["Authorization" => "Bearer $third"])
                 _, check_login = login(server); check = String(check_login["session"])
                 query(server, check, "Pilih 'Bank' -:")
                 _, rows = query(server, check, "Tampilkan 'Rekening' -:")

@@ -264,14 +264,17 @@ direproduksi memakai [harness SDEBO](Standard%20Database%20for%20Banking%20and%2
 
 Gunakan rilis ini dengan satu shared `Engine` per data root di dalam proses
 server, backup native yang sudah diuji restore, penyimpanan lokal yang
-mendukung durable flush, dan TinyServer pada loopback. Akses LAN hanya setelah
-memilih `--allow-insecure-network` di belakang firewall atau TLS reverse proxy.
+mendukung durable flush, dan TinyServer pada loopback. TinyServer kini
+menyediakan TLS native (TLS 1.3+), role `admin`/`reader`, login lockout, dan
+audit JSONL. Akses LAN/public wajib memakai certificate dan private key; mode
+`--allow-insecure-network` hanya untuk reverse proxy tepercaya.
 
 Pekerjaan utama sebelum rekomendasi produksi finansial:
 
 1. memperluas stress concurrency, fault injection, hard power-off, dan audit
    eksternal;
-2. menambah RBAC, rotasi credential, audit log, TLS, dan hardening jaringan;
+2. menambah rotasi credential, audit retention/rotation, mTLS opsional, dan
+   hardening jaringan lanjutan;
 3. menekan penggunaan memory dan tail latency pada soak serta mixed workload;
 4. memperluas planner, physical operator, dan observability I/O.
 
@@ -282,11 +285,26 @@ dan migrasi format legacy bersifat satu arah. Baca
 
 ## Keamanan dan operasi
 
-TinyServer bind ke loopback secara default. Binding non-loopback harus dipilih
-eksplisit dengan `--allow-insecure-network` dan memerlukan firewall/LAN
-tepercaya atau TLS reverse proxy. TinyServer belum menyediakan TLS, RBAC, atau
-audit log sendiri. Password `root` disimpan sebagai hash PBKDF2-HMAC-SHA256
-dengan salt acak; token session berasal dari random source sistem operasi.
+TinyServer bind ke loopback secara default. Binding non-loopback memerlukan
+TLS native:
+
+```text
+airesdb server --host 0.0.0.0 --tls-cert-file server.crt --tls-key-file server.key
+airesdb -u root -p --host db.example --tls --tls-ca-file ca.crt
+```
+
+Tanpa TLS, binding non-loopback ditolak. `--allow-insecure-network` hanya
+menjadi escape hatch eksplisit untuk reverse proxy tepercaya yang mengakhiri
+TLS; jangan gunakan untuk membuka port TinyServer langsung.
+
+Password `root` disimpan sebagai hash PBKDF2-HMAC-SHA256 dengan salt acak;
+credential file mendukung role `admin` dan `reader`. Reader hanya dapat
+menjalankan query baca/metadata, sedangkan mutasi dan maintenance memerlukan
+admin. Login gagal dilimit dengan lockout per user. Audit JSONL default
+`.airesdb-audit.jsonl` mencatat event, user, role, action, status, dan hash
+query—tanpa password, bearer token, atau teks query. Token session berasal dari
+random source sistem operasi dan client resmi mengirimkannya lewat
+`Authorization: Bearer`.
 
 Default resource limit:
 
