@@ -341,3 +341,8 @@ Redistribusi source harus mempertahankan copyright notice, syarat, dan
 disclaimer. Distribusi binary harus mereproduksinya dalam dokumentasi atau
 material distribusi. Nama AiresDB, pemegang hak cipta, dan kontributor tidak
 boleh digunakan untuk endorsement tanpa izin tertulis.
+
+Made by open aires Team, Institut Teknologi Sumatera
+Team Leader: Aires Zam Wibisono
+Benchmarking Specialist: I Made Raditya Mahardika
+Support Engineer : Suma Yasa
