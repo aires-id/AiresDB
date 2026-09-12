@@ -240,42 +240,51 @@ function _parse_cli_options(args::Vector{String})
         "host" => DEFAULT_SERVER_HOST, "port" => DEFAULT_SERVER_PORT,
         "user" => "root", "ask_password" => false, "no_banner" => false,
         "file" => nothing, "data_root" => abspath("data"), "verbose" => false,
+        "max_header_bytes" => DEFAULT_MAX_HEADER_BYTES,
         "max_request_body" => DEFAULT_MAX_REQUEST_BODY,
+        "max_concurrent_requests" => DEFAULT_MAX_CONCURRENT_REQUESTS,
         "max_sessions" => DEFAULT_MAX_SESSIONS, "idle_timeout" => DEFAULT_IDLE_TIMEOUT,
+        "max_session_lifetime" => DEFAULT_MAX_SESSION_LIFETIME,
         "max_result_rows" => DEFAULT_MAX_RESULT_ROWS,
         "max_query_seconds" => DEFAULT_MAX_QUERY_SECONDS,
         "max_response_body" => DEFAULT_MAX_RESPONSE_BODY,
         "max_query_memory_bytes" => DEFAULT_MAX_QUERY_MEMORY_BYTES,
         "max_query_spill_bytes" => DEFAULT_MAX_QUERY_SPILL_BYTES,
-        "allow_insecure_network" => false,
         "tls" => false, "tls_ca_file" => nothing,
         "tls_cert_file" => nothing, "tls_key_file" => nothing,
         "audit_log_file" => DEFAULT_AUDIT_LOG_FILE,
+        "audit_max_bytes" => DEFAULT_AUDIT_MAX_BYTES,
+        "max_failed_logins" => DEFAULT_MAX_FAILED_LOGINS,
+        "login_lockout_seconds" => DEFAULT_LOGIN_LOCKOUT_SECONDS,
+        "max_tracked_login_users" => DEFAULT_MAX_TRACKED_LOGIN_USERS,
     )
     server = !isempty(args) && first(args) == "server"
     index = server ? 2 : 1
     while index <= length(args)
         arg = args[index]
         if arg in ("-h", "--host", "-P", "--port", "-u", "--user", "--file", "--data-root",
-                   "--max-request-body", "--max-sessions", "--idle-timeout", "--max-result-rows",
+                   "--max-header-bytes", "--max-request-body", "--max-concurrent-requests",
+                   "--max-sessions", "--idle-timeout", "--max-session-lifetime", "--max-result-rows",
                    "--max-query-seconds", "--max-response-body", "--max-query-memory-bytes",
                    "--max-query-spill-bytes", "--tls-ca-file", "--tls-cert-file",
-                   "--tls-key-file", "--audit-log-file")
+                   "--tls-key-file", "--audit-log-file", "--audit-max-bytes",
+                   "--max-failed-logins", "--login-lockout-seconds", "--max-tracked-login-users")
             index < length(args) || throw(ArgumentError("$arg requires a value."))
             index += 1; value = args[index]
             key = arg in ("-h", "--host") ? "host" : arg in ("-P", "--port") ? "port" :
                   arg in ("-u", "--user") ? "user" : replace(arg[3:end], '-' => '_')
-            options[key] = key in ("port", "max_request_body", "max_sessions", "max_result_rows", "max_response_body",
-                                   "max_query_memory_bytes", "max_query_spill_bytes") ? parse(Int, value) :
-                           key == "idle_timeout" ? parse(Float64, value) : value
+            options[key] = key in ("port", "max_header_bytes", "max_request_body",
+                                   "max_concurrent_requests", "max_sessions", "max_result_rows", "max_response_body",
+                                   "max_query_memory_bytes", "max_query_spill_bytes", "audit_max_bytes",
+                                   "max_failed_logins", "max_tracked_login_users") ? parse(Int, value) :
+                           key in ("idle_timeout", "max_session_lifetime", "max_query_seconds",
+                                   "login_lockout_seconds") ? parse(Float64, value) : value
         elseif arg == "-p"
             options["ask_password"] = true
         elseif arg == "--no-banner"
             options["no_banner"] = true
         elseif arg == "--verbose"
             options["verbose"] = true
-        elseif arg == "--allow-insecure-network"
-            options["allow_insecure_network"] = true
         elseif arg == "--tls"
             options["tls"] = true
         elseif arg == "--help"
@@ -305,7 +314,7 @@ function _server_password(config::TinyServerConfig)
 end
 
 function _print_usage(io::IO=stdout)
-    println(io, "airesdb server [--host HOST] [--port PORT] [--data-root DIR] [--tls-cert-file FILE --tls-key-file FILE] [--audit-log-file FILE] [--max-result-rows N] [--max-query-seconds N] [--max-response-body BYTES] [--max-query-memory-bytes BYTES] [--max-query-spill-bytes BYTES] [--allow-insecure-network] [--verbose]")
+    println(io, "airesdb server [--host HOST] [--port PORT] [--data-root DIR] [--tls-cert-file FILE --tls-key-file FILE] [--audit-log-file FILE] [--audit-max-bytes BYTES] [--max-header-bytes BYTES] [--max-request-body BYTES] [--max-concurrent-requests N] [--max-sessions N] [--idle-timeout N] [--max-session-lifetime N] [--max-failed-logins N] [--login-lockout-seconds N] [--max-result-rows N] [--max-query-seconds N] [--max-response-body BYTES] [--max-query-memory-bytes BYTES] [--max-query-spill-bytes BYTES] [--verbose]")
     println(io, "airesdb -u USER -p [-h HOST] [-P PORT] [--tls [--tls-ca-file FILE]] [--file SCRIPT] [--no-banner]")
 end
 
@@ -317,14 +326,19 @@ function cli_main(args::Vector{String}=ARGS)
         end
         if server_mode
             config = TinyServerConfig(host=options["host"], port=options["port"],
-                data_root=abspath(options["data_root"]), max_request_body=options["max_request_body"],
+                data_root=abspath(options["data_root"]), max_header_bytes=options["max_header_bytes"],
+                max_request_body=options["max_request_body"],
+                max_concurrent_requests=options["max_concurrent_requests"],
                 max_sessions=options["max_sessions"], idle_timeout=options["idle_timeout"],
+                max_session_lifetime=options["max_session_lifetime"],
                 max_result_rows=options["max_result_rows"], max_query_seconds=options["max_query_seconds"],
                 max_response_body=options["max_response_body"],
                 max_query_memory_bytes=options["max_query_memory_bytes"], max_query_spill_bytes=options["max_query_spill_bytes"],
-                allow_insecure_network=options["allow_insecure_network"],
                 tls_cert_file=options["tls_cert_file"], tls_key_file=options["tls_key_file"],
-                audit_log_file=options["audit_log_file"],
+                audit_log_file=options["audit_log_file"], audit_max_bytes=options["audit_max_bytes"],
+                max_failed_logins=options["max_failed_logins"],
+                login_lockout_seconds=options["login_lockout_seconds"],
+                max_tracked_login_users=options["max_tracked_login_users"],
                 verbose=options["verbose"])
             password = _server_password(config)
             server = start_tinyserver(config; password)
@@ -332,12 +346,7 @@ function cli_main(args::Vector{String}=ARGS)
             println("Listening on $(server_url(server))")
             println("Data directory: $(config.data_root)")
             if !(config.host in ("127.0.0.1", "localhost", "::1"))
-                if config.tls_cert_file === nothing
-                    println(stderr,
-                        "WARNING: AiresDB TinyServer is exposed beyond loopback in reverse-proxy mode.\nUse a trusted TLS-terminating proxy and firewall rules.")
-                else
-                    println(stderr, "TLS enabled; protect the private key and restrict network access.")
-                end
+                println(stderr, "TLS enabled; protect the private key and restrict network access.")
             end
             try
                 wait(server.http_server)

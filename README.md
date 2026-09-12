@@ -266,14 +266,14 @@ Gunakan rilis ini dengan satu shared `Engine` per data root di dalam proses
 server, backup native yang sudah diuji restore, penyimpanan lokal yang
 mendukung durable flush, dan TinyServer pada loopback. TinyServer kini
 menyediakan TLS native (TLS 1.3+), role `admin`/`reader`, login lockout, dan
-audit JSONL. Akses LAN/public wajib memakai certificate dan private key; mode
-`--allow-insecure-network` hanya untuk reverse proxy tepercaya.
+audit JSONL fail-closed. Akses LAN/public wajib memakai certificate dan private
+key; tidak tersedia insecure bypass untuk binding non-loopback.
 
 Pekerjaan utama sebelum rekomendasi produksi finansial:
 
 1. memperluas stress concurrency, fault injection, hard power-off, dan audit
    eksternal;
-2. menambah rotasi credential, audit retention/rotation, mTLS opsional, dan
+2. menambah rotasi credential, centralized audit retention, mTLS opsional, dan
    hardening jaringan lanjutan;
 3. menekan penggunaan memory dan tail latency pada soak serta mixed workload;
 4. memperluas planner, physical operator, dan observability I/O.
@@ -293,31 +293,39 @@ airesdb server --host 0.0.0.0 --tls-cert-file server.crt --tls-key-file server.k
 airesdb -u root -p --host db.example --tls --tls-ca-file ca.crt
 ```
 
-Tanpa TLS, binding non-loopback ditolak. `--allow-insecure-network` hanya
-menjadi escape hatch eksplisit untuk reverse proxy tepercaya yang mengakhiri
-TLS; jangan gunakan untuk membuka port TinyServer langsung.
+Tanpa TLS, binding non-loopback selalu ditolak. Reverse proxy lokal harus
+mengakses listener loopback; koneksi antar-host tetap wajib memakai TLS native.
 
 Password `root` disimpan sebagai hash PBKDF2-HMAC-SHA256 dengan salt acak;
 credential file mendukung role `admin` dan `reader`. Reader hanya dapat
 menjalankan query baca/metadata, sedangkan mutasi dan maintenance memerlukan
-admin. Login gagal dilimit dengan lockout per user. Audit JSONL default
+admin. Login gagal dilimit dengan lockout per user, session memiliki idle dan
+umur absolut, request aktif serta ukuran header dibatasi, dan keputusan RBAC
+memakai AST hasil parser. Audit JSONL default
 `.airesdb-audit.jsonl` mencatat event, user, role, action, status, dan hash
-query—tanpa password, bearer token, atau teks query. Token session berasal dari
-random source sistem operasi dan client resmi mengirimkannya lewat
+query serta connection ID—tanpa password, bearer token, atau teks query. Audit
+berotasi ke `.1` pada 64 MiB dan request ditolak bila log tidak dapat ditulis.
+Jika mutasi selesai tetapi acknowledgement gagal, client menerima
+`Commit Outcome Unknown` dan wajib memeriksa state sebelum retry. Token session
+berasal dari random source sistem operasi dan hanya diterima lewat
 `Authorization: Bearer`.
 
 Default resource limit:
 
 | Batas | Default |
 |---|---:|
+| HTTP header | 32 KiB |
 | Request body | 8 MiB |
+| Concurrent requests | 128 |
 | Active sessions | 64 |
 | Idle session timeout | 10 menit |
+| Maximum session lifetime | 60 menit |
 | Query result rows | 100.000 |
 | Query execution time | 30 detik |
 | JSON response body | 64 MiB |
 | Query memory before spill | 64 MiB |
 | Query spill budget | 1 GiB |
+| Audit log rotation | 64 MiB |
 
 Laporkan kerentanan sesuai [SECURITY.md](SECURITY.md).
 

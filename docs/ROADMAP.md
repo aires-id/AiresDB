@@ -41,9 +41,12 @@ bukan fitur yang sudah tersedia.
    bertipe, bulk import, dan CSV.
 7. **Operational tooling.** inspect WAL, maintenance scheduling, metrics, dan
    migration dry-run.
-8. **Server mode.** RBAC, rate limiting/audit, protocol, TLS, dan lifecycle
-   transaksi sebelum menawarkan akses jaringan yang lebih luas. Authentication,
-   query quota/cancellation guard, dan explicit non-loopback opt-in sudah ada.
+8. **Server mode.** TLS 1.3 native, AST-based RBAC, bounded login throttling,
+   bearer-only session, absolute session lifetime, bounded request/header,
+   fail-closed audit, dan query quota/cancellation guard sudah tersedia.
+   Berikutnya adalah credential
+   rotation, centralized audit retention, source-aware edge rate limiting,
+   metrics, dan mTLS opsional.
 
 ## Gate kualitas untuk fitur storage berikutnya
 
