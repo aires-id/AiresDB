@@ -31,6 +31,11 @@ const AIRESDB_BANNER = raw"""
                      :.+---********---:.
 """
 
+# Retire pooled connections before TinyServer's read-header timeout closes them.
+# Mutating requests deliberately keep retry=false, so stale sockets must never be
+# handed back to a query instead of relying on an unsafe automatic replay.
+const CLIENT_HTTP_IDLE_TIMEOUT_NS = Int64(5_000_000_000)
+
 const CLIENT_HELP_TEXT = """
 AiresDB monitor adalah client untuk AiresDB TinyServer.
 Semua statement AiresQL wajib diakhiri -: dan dapat ditulis multiline.
@@ -48,6 +53,11 @@ Semua statement AiresQL wajib diakhiri -: dan dapat ditulis multiline.
   .exit                 Tutup session dan keluar
 """
 
+function _new_http_client(; timeout::Real=10, tls_config=nothing)
+    transport = HTTP.Transport(; tls_config, idle_timeout_ns=CLIENT_HTTP_IDLE_TIMEOUT_NS)
+    HTTP.Client(; connect_timeout=Float64(timeout), transport)
+end
+
 function _http_json(method::String, url::String, body=nothing; timeout::Real=10,
         headers::AbstractVector{<:Pair}=Pair{String,String}[], client=nothing)
     request_headers = ["Accept" => "application/json"]
@@ -57,7 +67,7 @@ function _http_json(method::String, url::String, body=nothing; timeout::Real=10,
         push!(request_headers, "Content-Type" => "application/json")
         payload = Vector{UInt8}(codeunits(JSON3.write(body)))
     end
-    request_client = client === nothing ? HTTP.Client(; connect_timeout=Float64(timeout)) : client
+    request_client = client === nothing ? _new_http_client(; timeout) : client
     response = try
         HTTP.request(request_client, method, url, request_headers, payload; status_exception=false, retry=false)
     finally
@@ -147,9 +157,9 @@ function run_client(; host::String=DEFAULT_SERVER_HOST, port::Int=DEFAULT_SERVER
             tls_config = ca_file === nothing ?
                 HTTP.TLS.Config(min_version=HTTP.TLS.TLS1_3_VERSION) :
                 HTTP.TLS.Config(ca_file=ca_file, min_version=HTTP.TLS.TLS1_3_VERSION)
-            HTTP.Client(connect_timeout=10.0, transport=HTTP.Transport(tls_config=tls_config))
+            _new_http_client(; timeout=10.0, tls_config)
         else
-            HTTP.Client(connect_timeout=10.0)
+            _new_http_client(; timeout=10.0)
         end
     catch error
         println(error_output, "ERROR A1000: Cannot configure the AiresDB client: ", sprint(showerror, error))
