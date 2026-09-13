@@ -48,18 +48,20 @@ Semua statement AiresQL wajib diakhiri -: dan dapat ditulis multiline.
   .exit                 Tutup session dan keluar
 """
 
-function _http_json(method::String, url::String, body=nothing; timeout::Real=10)
-    headers = ["Accept" => "application/json"]
+function _http_json(method::String, url::String, body=nothing; timeout::Real=10,
+        headers::AbstractVector{<:Pair}=Pair{String,String}[], client=nothing)
+    request_headers = ["Accept" => "application/json"]
+    append!(request_headers, headers)
     payload = UInt8[]
     if body !== nothing
-        push!(headers, "Content-Type" => "application/json")
+        push!(request_headers, "Content-Type" => "application/json")
         payload = Vector{UInt8}(codeunits(JSON3.write(body)))
     end
-    client = HTTP.Client(; connect_timeout=Float64(timeout))
+    request_client = client === nothing ? HTTP.Client(; connect_timeout=Float64(timeout)) : client
     response = try
-        HTTP.request(client, method, url, headers, payload; status_exception=false, retry=false)
+        HTTP.request(request_client, method, url, request_headers, payload; status_exception=false, retry=false)
     finally
-        close(client)
+        client === nothing && close(request_client)
     end
     parsed = isempty(response.body) ? Dict{String,Any}() : JSON3.read(String(response.body), Dict{String,Any})
     response.status, parsed
@@ -121,9 +123,10 @@ function _read_password(input::IO, output::IO)
     readline(input)
 end
 
-function _close_remote_session(base_url::String, token::String)
+function _close_remote_session(base_url::String, token::String; client=nothing)
     try
-        _http_json("DELETE", "$base_url/session/$token"; timeout=3)
+        _http_json("DELETE", "$base_url/session";
+            timeout=3, client=client, headers=["Authorization" => "Bearer $token"])
     catch
     end
     nothing
@@ -131,18 +134,37 @@ end
 
 function run_client(; host::String=DEFAULT_SERVER_HOST, port::Int=DEFAULT_SERVER_PORT,
         user::String="root", password=nothing, ask_password::Bool=true,
+        tls::Bool=false, tls_ca_file=nothing,
         input::IO=stdin, output::IO=stdout, error_output::IO=stderr,
         interactive::Bool=(input isa Base.TTY && output isa Base.TTY),
         banner::Bool=interactive, stop_on_error::Bool=!interactive)
-    base_url = "http://$host:$port"
+    scheme = tls ? "https" : "http"
+    base_url = "$scheme://" * HTTP.HostResolvers.join_host_port(host, port)
+    http_client = try
+        if tls
+            ca_file = tls_ca_file === nothing ? nothing : abspath(String(tls_ca_file))
+            ca_file === nothing || isfile(ca_file) || throw(ArgumentError("TLS CA file not found: $ca_file"))
+            tls_config = ca_file === nothing ?
+                HTTP.TLS.Config(min_version=HTTP.TLS.TLS1_3_VERSION) :
+                HTTP.TLS.Config(ca_file=ca_file, min_version=HTTP.TLS.TLS1_3_VERSION)
+            HTTP.Client(connect_timeout=10.0, transport=HTTP.Transport(tls_config=tls_config))
+        else
+            HTTP.Client(connect_timeout=10.0)
+        end
+    catch error
+        println(error_output, "ERROR A1000: Cannot configure the AiresDB client: ", sprint(showerror, error))
+        return 1
+    end
     supplied_password = password === nothing && ask_password ? _read_password(input, output) : something(password, "")
     status, login = try
-        _http_json("POST", "$base_url/session", (; user, password=String(supplied_password)))
+        _http_json("POST", "$base_url/session", (; user, password=String(supplied_password)); client=http_client)
     catch
+        close(http_client)
         println(error_output, "ERROR A1000: Cannot connect to AiresDB server at $host:$port.\n\nStart the server with:\n\n    airesdb server")
         return 1
     end
     if status != 201 || get(login, "ok", false) !== true
+        close(http_client)
         println(error_output, _client_error(login, "Login failed."))
         return 1
     end
@@ -188,7 +210,8 @@ function run_client(; host::String=DEFAULT_SERVER_HOST, port::Int=DEFAULT_SERVER
                 occursin("-:", pending) || continue
             end
             status, response = try
-                _http_json("POST", "$base_url/query", (; session=token, query=pending))
+                _http_json("POST", "$base_url/query", (; query=pending);
+                    client=http_client, headers=["Authorization" => "Bearer $token"])
             catch
                 println(error_output, "ERROR A1000: Connection to AiresDB server was lost.")
                 return 1
@@ -206,7 +229,8 @@ function run_client(; host::String=DEFAULT_SERVER_HOST, port::Int=DEFAULT_SERVER
             exit_code = 1
         end
     finally
-        _close_remote_session(base_url, token)
+        _close_remote_session(base_url, token; client=http_client)
+        close(http_client)
     end
     exit_code
 end
@@ -216,38 +240,53 @@ function _parse_cli_options(args::Vector{String})
         "host" => DEFAULT_SERVER_HOST, "port" => DEFAULT_SERVER_PORT,
         "user" => "root", "ask_password" => false, "no_banner" => false,
         "file" => nothing, "data_root" => abspath("data"), "verbose" => false,
+        "max_header_bytes" => DEFAULT_MAX_HEADER_BYTES,
         "max_request_body" => DEFAULT_MAX_REQUEST_BODY,
+        "max_concurrent_requests" => DEFAULT_MAX_CONCURRENT_REQUESTS,
         "max_sessions" => DEFAULT_MAX_SESSIONS, "idle_timeout" => DEFAULT_IDLE_TIMEOUT,
+        "max_session_lifetime" => DEFAULT_MAX_SESSION_LIFETIME,
         "max_result_rows" => DEFAULT_MAX_RESULT_ROWS,
         "max_query_seconds" => DEFAULT_MAX_QUERY_SECONDS,
         "max_response_body" => DEFAULT_MAX_RESPONSE_BODY,
         "max_query_memory_bytes" => DEFAULT_MAX_QUERY_MEMORY_BYTES,
         "max_query_spill_bytes" => DEFAULT_MAX_QUERY_SPILL_BYTES,
-        "allow_insecure_network" => false,
+        "tls" => false, "tls_ca_file" => nothing,
+        "tls_cert_file" => nothing, "tls_key_file" => nothing,
+        "audit_log_file" => DEFAULT_AUDIT_LOG_FILE,
+        "audit_max_bytes" => DEFAULT_AUDIT_MAX_BYTES,
+        "max_failed_logins" => DEFAULT_MAX_FAILED_LOGINS,
+        "login_lockout_seconds" => DEFAULT_LOGIN_LOCKOUT_SECONDS,
+        "max_tracked_login_users" => DEFAULT_MAX_TRACKED_LOGIN_USERS,
     )
     server = !isempty(args) && first(args) == "server"
     index = server ? 2 : 1
     while index <= length(args)
         arg = args[index]
         if arg in ("-h", "--host", "-P", "--port", "-u", "--user", "--file", "--data-root",
-                   "--max-request-body", "--max-sessions", "--idle-timeout", "--max-result-rows",
+                   "--max-header-bytes", "--max-request-body", "--max-concurrent-requests",
+                   "--max-sessions", "--idle-timeout", "--max-session-lifetime", "--max-result-rows",
                    "--max-query-seconds", "--max-response-body", "--max-query-memory-bytes",
-                   "--max-query-spill-bytes")
+                   "--max-query-spill-bytes", "--tls-ca-file", "--tls-cert-file",
+                   "--tls-key-file", "--audit-log-file", "--audit-max-bytes",
+                   "--max-failed-logins", "--login-lockout-seconds", "--max-tracked-login-users")
             index < length(args) || throw(ArgumentError("$arg requires a value."))
             index += 1; value = args[index]
             key = arg in ("-h", "--host") ? "host" : arg in ("-P", "--port") ? "port" :
                   arg in ("-u", "--user") ? "user" : replace(arg[3:end], '-' => '_')
-            options[key] = key in ("port", "max_request_body", "max_sessions", "max_result_rows", "max_response_body",
-                                   "max_query_memory_bytes", "max_query_spill_bytes") ? parse(Int, value) :
-                           key == "idle_timeout" ? parse(Float64, value) : value
+            options[key] = key in ("port", "max_header_bytes", "max_request_body",
+                                   "max_concurrent_requests", "max_sessions", "max_result_rows", "max_response_body",
+                                   "max_query_memory_bytes", "max_query_spill_bytes", "audit_max_bytes",
+                                   "max_failed_logins", "max_tracked_login_users") ? parse(Int, value) :
+                           key in ("idle_timeout", "max_session_lifetime", "max_query_seconds",
+                                   "login_lockout_seconds") ? parse(Float64, value) : value
         elseif arg == "-p"
             options["ask_password"] = true
         elseif arg == "--no-banner"
             options["no_banner"] = true
         elseif arg == "--verbose"
             options["verbose"] = true
-        elseif arg == "--allow-insecure-network"
-            options["allow_insecure_network"] = true
+        elseif arg == "--tls"
+            options["tls"] = true
         elseif arg == "--help"
             options["help"] = true
         else
@@ -275,8 +314,8 @@ function _server_password(config::TinyServerConfig)
 end
 
 function _print_usage(io::IO=stdout)
-    println(io, "airesdb server [--host HOST] [--port PORT] [--data-root DIR] [--max-result-rows N] [--max-query-seconds N] [--max-response-body BYTES] [--max-query-memory-bytes BYTES] [--max-query-spill-bytes BYTES] [--allow-insecure-network] [--verbose]")
-    println(io, "airesdb -u USER -p [-h HOST] [-P PORT] [--file SCRIPT] [--no-banner]")
+    println(io, "airesdb server [--host HOST] [--port PORT] [--data-root DIR] [--tls-cert-file FILE --tls-key-file FILE] [--audit-log-file FILE] [--audit-max-bytes BYTES] [--max-header-bytes BYTES] [--max-request-body BYTES] [--max-concurrent-requests N] [--max-sessions N] [--idle-timeout N] [--max-session-lifetime N] [--max-failed-logins N] [--login-lockout-seconds N] [--max-result-rows N] [--max-query-seconds N] [--max-response-body BYTES] [--max-query-memory-bytes BYTES] [--max-query-spill-bytes BYTES] [--verbose]")
+    println(io, "airesdb -u USER -p [-h HOST] [-P PORT] [--tls [--tls-ca-file FILE]] [--file SCRIPT] [--no-banner]")
 end
 
 function cli_main(args::Vector{String}=ARGS)
@@ -287,20 +326,28 @@ function cli_main(args::Vector{String}=ARGS)
         end
         if server_mode
             config = TinyServerConfig(host=options["host"], port=options["port"],
-                data_root=abspath(options["data_root"]), max_request_body=options["max_request_body"],
+                data_root=abspath(options["data_root"]), max_header_bytes=options["max_header_bytes"],
+                max_request_body=options["max_request_body"],
+                max_concurrent_requests=options["max_concurrent_requests"],
                 max_sessions=options["max_sessions"], idle_timeout=options["idle_timeout"],
+                max_session_lifetime=options["max_session_lifetime"],
                 max_result_rows=options["max_result_rows"], max_query_seconds=options["max_query_seconds"],
                 max_response_body=options["max_response_body"],
                 max_query_memory_bytes=options["max_query_memory_bytes"], max_query_spill_bytes=options["max_query_spill_bytes"],
-                allow_insecure_network=options["allow_insecure_network"],
+                tls_cert_file=options["tls_cert_file"], tls_key_file=options["tls_key_file"],
+                audit_log_file=options["audit_log_file"], audit_max_bytes=options["audit_max_bytes"],
+                max_failed_logins=options["max_failed_logins"],
+                login_lockout_seconds=options["login_lockout_seconds"],
+                max_tracked_login_users=options["max_tracked_login_users"],
                 verbose=options["verbose"])
             password = _server_password(config)
             server = start_tinyserver(config; password)
             println("AiresDB TinyServer $(AIRESDB_SERVER_VERSION)")
             println("Listening on $(server_url(server))")
             println("Data directory: $(config.data_root)")
-            config.host in ("127.0.0.1", "localhost", "::1") || println(stderr,
-                "WARNING: AiresDB TinyServer is exposed beyond loopback.\nUse a trusted LAN/firewall or TLS reverse proxy.")
+            if !(config.host in ("127.0.0.1", "localhost", "::1"))
+                println(stderr, "TLS enabled; protect the private key and restrict network access.")
+            end
             try
                 wait(server.http_server)
             finally
@@ -312,6 +359,7 @@ function cli_main(args::Vector{String}=ARGS)
         input = options["file"] === nothing ? stdin : open(String(options["file"]), "r")
         try
             return run_client(host=options["host"], port=options["port"], user=options["user"],
+                tls=options["tls"], tls_ca_file=options["tls_ca_file"],
                 ask_password=options["ask_password"], input=input,
                 interactive=options["file"] === nothing && stdin isa Base.TTY,
                 banner=!options["no_banner"] && options["file"] === nothing && stdout isa Base.TTY)
