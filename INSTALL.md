@@ -1,151 +1,266 @@
-# Instalasi AiresDB
+# Installing AiresDB
 
-AiresDB membutuhkan Julia 1.12. Semua akses pengguna berlangsung melalui
-AiresDB TinyServer.
+Welcome! AiresDB currently requires **Julia 1.12**, and supported user access
+goes through AiresDB TinyServer. The recommended installation creates the
+`airesdb` command so you can start the server and CLI monitor directly.
 
-Untuk pengalaman pengguna dengan satu executable, instal AiresDB sebagai Julia
-app. Setelah terpasang, command monitor tetap `airesdb -u root -p`.
+## 1. Check Julia
 
-## Instalasi dari General
+Run:
 
-Setelah rilis `v0.1.0` masuk registry General, instal paket dengan salah satu
-cara berikut.
-
-Di Julia package REPL (tekan `]`):
-
-```julia-repl
-pkg> add AiresDB
+```text
+julia --version
 ```
 
-Atau langsung dari shell:
+The output should begin with `julia version 1.12`. If the command is missing or
+the version is different, install Julia 1.12 using the
+[official Julia installation guide](https://julialang.org/install/).
+
+## 2. Install the CLI app from GitHub
+
+AiresDB is not yet available from Julia's General registry. Use the GitHub URL
+for the current installation. The command also bootstraps the General registry
+when a fresh Julia installation does not have it yet, because AiresDB resolves
+its dependencies from General.
+
+### Linux, macOS, or a Unix shell
 
 ```sh
-julia -e 'using Pkg; Pkg.add("AiresDB")'
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add("General"); Pkg.Apps.add(url="https://github.com/aires-id/AiresDB")'
 ```
 
-Windows Command Prompt memakai double quote di luar dan escape quote Julia di
-dalam:
-
-```bat
-julia -e "using Pkg; Pkg.add(\"AiresDB\")"
-```
-
-Untuk Windows PowerShell 5, escape tanda kutip yang diteruskan ke Julia:
+### Windows PowerShell
 
 ```powershell
-julia -e 'using Pkg; Pkg.add(\"AiresDB\")'
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.Apps.add(url=\"https://github.com/aires-id/AiresDB\")'
 ```
 
-Instalasi paket memungkinkan CLI dijalankan melalui entry point modul:
+### Windows Command Prompt (`cmd.exe`)
+
+```bat
+julia -e "using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.Apps.add(url=\"https://github.com/aires-id/AiresDB\")"
+```
+
+> [!NOTE]
+> Please copy the command for your terminal exactly. The escaped quotation marks
+> in the Windows examples are intentional. Command Prompt does not treat outer
+> single quotes like a Unix shell; using them causes Julia's
+> `character literal contains multiple characters` parse error.
+
+> [!NOTE]
+> A cold first installation can take a few minutes while Julia downloads and
+> precompiles dependencies. Please leave the terminal open until it reports
+> that the `airesdb` app was installed.
+
+`Pkg.Apps.add` installs AiresDB in a Julia app environment and creates an
+`airesdb` launcher in the Julia app directory.
+
+## 3. Add the app directory to `PATH`
+
+If `airesdb` is not immediately recognized, add the Julia app directory to the
+current terminal session.
+
+### Linux or macOS
 
 ```sh
+export PATH="$HOME/.julia/bin:$PATH"
+```
+
+### Windows PowerShell
+
+```powershell
+$env:Path += ";$HOME\.julia\bin"
+```
+
+### Windows Command Prompt
+
+```bat
+set "PATH=%PATH%;%USERPROFILE%\.julia\bin"
+```
+
+These commands affect only the current terminal. You may add the same directory
+to your shell profile or user environment variables later for a permanent setup.
+
+## 4. Verify the installation and version
+
+Check the launcher:
+
+```text
+airesdb --help
+```
+
+List installed Julia apps on Linux, macOS, or PowerShell:
+
+```sh
+julia -e 'using Pkg; Pkg.Apps.status()'
+```
+
+In Command Prompt, use:
+
+```bat
+julia -e "using Pkg; Pkg.Apps.status()"
+```
+
+The status output should include `AiresDB v0.1.0` and the `airesdb` app.
+
+## 5. Start the server
+
+In the first terminal, run:
+
+```text
+airesdb server
+```
+
+The first start asks you to create and confirm the `root` password. Keep this
+terminal open. TinyServer listens on `127.0.0.1:1972` by default.
+
+## 6. Open the CLI monitor
+
+In a second terminal, run:
+
+```text
+airesdb -u root -p
+```
+
+Enter the password created by the server. When the `AiresDB [(none)]>` prompt
+appears, you can enter AiresQL:
+
+```text
+Buat 'Demo' -:
+Pilih 'Demo' -:
+.current
+.exit
+```
+
+The `-p` option asks for the password securely. It does not take the password as
+the next command-line argument.
+
+## Updating the app
+
+To update a GitHub installation on Linux or macOS, run:
+
+```sh
+julia -e 'using Pkg; Pkg.Apps.update("AiresDB")'
+```
+
+In Windows PowerShell, run:
+
+```powershell
+julia -e 'using Pkg; Pkg.Apps.update(\"AiresDB\")'
+```
+
+In Command Prompt, run:
+
+```bat
+julia -e "using Pkg; Pkg.Apps.update(\"AiresDB\")"
+```
+
+Run `Pkg.Apps.status()` again to confirm the installed revision and version.
+
+> [!NOTE]
+> Julia's app support is experimental in Julia 1.12. The launcher uses the Julia
+> executable that installed it. Reinstall the app if that Julia executable is
+> moved or removed.
+
+## Package-only installation
+
+Use this option when you want AiresDB in the active Julia environment without
+installing the standalone app launcher.
+
+### Linux, macOS, or a Unix shell
+
+```sh
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add("General"); Pkg.add(url="https://github.com/aires-id/AiresDB")'
+```
+
+### Windows PowerShell
+
+```powershell
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.add(url=\"https://github.com/aires-id/AiresDB\")'
+```
+
+### Windows Command Prompt
+
+```bat
+julia -e "using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.add(url=\"https://github.com/aires-id/AiresDB\")"
+```
+
+From that Julia environment, use the module entry point:
+
+```text
 julia -m AiresDB server
 julia -m AiresDB -u root -p
 ```
 
-Opsi `-e` dipakai untuk mengevaluasi kode Julia, jadi bentuk
-`julia -e airesdb -u root -p` bukan sintaks launcher AiresDB.
+The `-e` flag evaluates Julia code. It is not an AiresDB launcher, so
+`julia -e airesdb -u root -p` is not valid syntax.
 
-## Instalasi sebagai app
+## Future General registry installation
 
-Julia 1.12 dapat memasang executable `airesdb` dari deklarasi `[apps]` di
-`Project.toml`:
-
-```julia-repl
-pkg> app add AiresDB
-```
-
-Perintah shell yang setara:
+After AiresDB is accepted into Julia's General registry, the app installation
+on Linux or macOS will become:
 
 ```sh
-julia -e 'using Pkg; Pkg.Apps.add("AiresDB")'
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add("General"); Pkg.Apps.add("AiresDB")'
 ```
 
-Untuk Windows Command Prompt:
-
-```bat
-julia -e "using Pkg; Pkg.Apps.add(\"AiresDB\")"
-```
-
-Untuk Windows PowerShell 5:
+PowerShell will use:
 
 ```powershell
-julia -e 'using Pkg; Pkg.Apps.add(\"AiresDB\")'
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.Apps.add(\"AiresDB\")'
 ```
 
-Pastikan direktori app Julia masuk ke `PATH`:
-
-```sh
-# Linux/macOS
-export PATH="$HOME/.julia/bin:$PATH"
-```
-
-```powershell
-# Windows PowerShell, untuk sesi saat ini
-$env:Path += ";$HOME\.julia\bin"
-```
+Command Prompt will use:
 
 ```bat
-:: Windows Command Prompt, untuk sesi saat ini
-set "PATH=%PATH%;%USERPROFILE%\.julia\bin"
+julia -e "using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.Apps.add(\"AiresDB\")"
 ```
 
-Setelah itu jalankan:
+The equivalent package-only command will be `Pkg.add("AiresDB")`. These
+package-name-only commands are documented for the future and are not the current
+installation path.
 
-```sh
-airesdb server
-airesdb -u root -p
-```
+## Development from a checkout
 
-`airesdb server` dijalankan di terminal pertama. Command `airesdb -u root -p`
-adalah monitor client yang dijalankan di terminal kedua.
-
-Dukungan app di Pkg Julia 1.12 masih eksperimental. App memakai executable
-Julia yang dipakai saat instalasi; instal ulang app bila executable tersebut
-dipindahkan atau dihapus.
-
-## Instalasi langsung dari GitHub
-
-Sebelum AiresDB tersedia di General, paket dan app dapat dipasang dari URL:
-
-```sh
-julia -e 'using Pkg; Pkg.add(url="https://github.com/aires-id/AiresDB")'
-julia -e 'using Pkg; Pkg.Apps.add(url="https://github.com/aires-id/AiresDB")'
-```
-
-Untuk Windows PowerShell 5:
-
-```powershell
-julia -e 'using Pkg; Pkg.add(url=\"https://github.com/aires-id/AiresDB\")'
-julia -e 'using Pkg; Pkg.Apps.add(url=\"https://github.com/aires-id/AiresDB\")'
-```
-
-Untuk Windows Command Prompt:
-
-```bat
-julia -e "using Pkg; Pkg.Apps.add(url=\"https://github.com/aires-id/AiresDB\")"
-```
-
-## Pengembangan dari checkout
-
-Setelah repository ini di-clone, jalankan dari root checkout:
+After cloning this repository, run these commands from its root directory:
 
 ```sh
 julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.precompile()"
 julia --project=. -e "using Pkg; Pkg.test()"
 ```
 
-Jalankan dari checkout:
+Start the server and client from the checkout:
 
-```sh
+```text
 julia --project=. -m AiresDB server
 julia --project=. -m AiresDB -u root -p
 ```
 
-Launcher pengembangan setara tersedia sebagai `bin/airesdb.jl`. Project juga
-mendeklarasikan aplikasi `airesdb` melalui `[apps]` Julia 1.12.
+An equivalent development launcher is available at `bin/airesdb.jl`. The
+project also declares the `airesdb` Julia 1.12 app in `Project.toml`.
 
-Tidak ada workflow resmi yang membuka `.aires` langsung dari client.
+## Troubleshooting
 
-Checklist maintainer untuk penerbitan ke General tersedia di
+### `character literal contains multiple characters`
+
+You probably copied the Unix command into Windows Command Prompt. Use the
+PowerShell or Command Prompt command shown above, including its escaped quotes.
+
+### `airesdb` is not recognized
+
+Add `~/.julia/bin` to `PATH` using the command for your terminal, then run
+`airesdb --help` again. On Windows, the launcher is named `airesdb.bat`.
+
+### The CLI reports a connection error
+
+Start `airesdb server` in the first terminal and leave it running before opening
+`airesdb -u root -p` in the second terminal. The supported client does not open
+`.aires` files directly when TinyServer is unavailable.
+
+### Login is denied
+
+Use the `root` password created during the server's first start. Restarting the
+client does not reset that password or bypass the login lockout.
+
+The maintainer checklist for publishing to General is available in
 [docs/REGISTRATION.md](docs/REGISTRATION.md).

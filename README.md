@@ -1,116 +1,216 @@
 <p align="center">
-  <img src="AiresDB.png" alt="Logo AiresDB" width="180">
+  <img src="AiresDB.png" alt="AiresDB logo" width="180">
 </p>
 
 <h1 align="center">AiresDB v0.1.0</h1>
 
 <p align="center">
-  Database transaksional dengan AiresQL berbahasa Indonesia.<br>
-  <strong>Ringan. Cepat. Mudah. Murah.</strong>
+  A transactional database powered by Indonesian-language AiresQL.<br>
+  <strong>Lightweight. Fast. Approachable. Affordable.</strong>
 </p>
 
 <p align="center">
-  <img alt="Versi 0.1.0" src="https://img.shields.io/badge/version-0.1.0-ffc107">
+  <img alt="Version 0.1.0" src="https://img.shields.io/badge/version-0.1.0-ffc107">
   <img alt="Julia 1.12" src="https://img.shields.io/badge/Julia-1.12-9558b2">
-  <img alt="Lisensi NCSA" src="https://img.shields.io/badge/license-NCSA-blue">
+  <img alt="NCSA license" src="https://img.shields.io/badge/license-NCSA-blue">
 </p>
 
-AiresDB adalah database server karya **Aires Zam Wibisono**. AiresDB menyimpan
-data dalam file `.aires`, menjalankan transaksi serializable berbasis MVCC, dan
-menyediakan antarmuka resmi melalui **TinyServer HTTP/JSON** serta monitor CLI.
+AiresDB is a database server created by **Aires Zam Wibisono**. It stores data
+in `.aires` files, provides serializable transactions through MVCC, and exposes
+its supported user interface through the **TinyServer HTTP/JSON service** and
+the `airesdb` command-line monitor.
 
 > [!IMPORTANT]
-> **v0.1.0 adalah technical preview.** Ia cocok untuk evaluasi, pembelajaran,
-> prototipe, dan aplikasi internal berisiko rendah yang memiliki backup serta
-> pengujian sendiri. Hasil SDEBO menunjukkan fondasi correctness dan recovery
-> yang kuat, tetapi rilis ini belum direkomendasikan untuk data finansial
-> produksi. Lihat [status dan batasan](#status-v010) sebelum melakukan deployment.
+> Thanks for trying AiresDB! **v0.1.0 is a technical preview.** It is intended
+> for evaluation, learning, prototypes, and low-risk internal applications with
+> tested backups. The SDEBO results demonstrate a strong correctness and
+> recovery foundation, but this release is not yet recommended for production
+> financial data. Please read [Version 0.1.0 status](#version-010-status) before
+> deploying it.
 
-## Mengapa AiresDB
+## Why AiresDB?
 
-- **AiresQL berbahasa Indonesia** dengan terminator `-:` dan input multiline;
-- **ACID dan durability** melalui embedded WAL, checksum, OS sync, checkpoint,
-  native backup/restore, serta torn-tail recovery;
-- **optimistic serializable MVCC**, read-your-writes, dan first-committer-wins;
-- **storage page-based ARSP-4** dengan page 8 KiB, slotted heap, RID, bounded
-  Clock buffer pool, dan persistent B+Tree;
-- **tipe exact** untuk Decimal dan Money agar nilai tidak melewati konversi
-  floating-point pada API JSON;
-- **satu jalur akses resmi** melalui TinyServer, sehingga client tidak membuka
-  file database sebagai fallback;
-- **resource guard server** untuk membatasi waktu query, jumlah row hasil, dan
-  ukuran response JSON, memori query, dan byte spill sementara;
-- **optimizer tahap berikutnya** dengan multi-join greedy order, statistik tabel,
-  external hash join spill, serta `EXPLAIN` read-only;
-- **suite correctness, recovery, concurrency, dan benchmark** yang dapat
-  dijalankan ulang dari repository.
+- **Indonesian-language AiresQL**, with the `-:` statement terminator and
+  multiline input.
+- **ACID transactions and durable storage** through an embedded WAL, checksums,
+  OS-level synchronization, checkpoints, native backup/restore, and torn-tail
+  recovery.
+- **Optimistic serializable MVCC**, read-your-writes behavior, and
+  first-committer-wins conflict handling.
+- **ARSP-4 page storage** with 8 KiB pages, a slotted heap, RIDs, a bounded Clock
+  buffer pool, and a persistent B+Tree.
+- **Exact Decimal and Money values**, avoiding floating-point conversion in the
+  JSON API.
+- **One supported access path through TinyServer**, so clients never open
+  database files as a fallback.
+- **Server resource guards** for query time, result rows, response size, query
+  memory, temporary spill bytes, request concurrency, and HTTP headers.
+- **A practical optimizer foundation** with greedy multi-join ordering, table
+  statistics, external hash-join spilling, and read-only `EXPLAIN`.
+- **Reproducible correctness, recovery, concurrency, and benchmark suites** in
+  this repository.
 
-## Mulai cepat
+## Quick start
 
-AiresDB membutuhkan **Julia 1.12**.
+These steps install the `airesdb` app, start TinyServer, and open the interactive
+CLI monitor.
 
-> **Instalasi satu perintah:** setelah rilis tersedia di General, pasang app
-> `airesdb` dengan `Pkg.Apps.add`. App ini sekaligus menyediakan package dan
-> executable CLI.
+### 1. Check Julia
 
-```sh
-julia -e 'using Pkg; Pkg.Apps.add("AiresDB")'
+AiresDB currently requires **Julia 1.12**. Check the version available in your
+terminal:
+
+```text
+julia --version
 ```
 
-Sebelum masuk General, gunakan URL GitHub:
+The output should begin with `julia version 1.12`. If `julia` is not found or
+you have a different version, follow the friendly
+[official Julia installation guide](https://julialang.org/install/) first.
+
+### 2. Install AiresDB from GitHub
+
+AiresDB is not yet listed in Julia's General registry, so the GitHub URL is the
+current supported installation source. `Pkg.Apps.add` creates an isolated Julia
+app environment and the `airesdb` launcher. The first part of each command adds
+the General registry only when a fresh Julia installation does not have it yet;
+AiresDB's dependencies are resolved from that registry.
+
+Choose the command for your terminal and copy it exactly.
+
+**Linux, macOS, or a Unix shell**
 
 ```sh
-julia -e 'using Pkg; Pkg.Apps.add(url="https://github.com/aires-id/AiresDB")'
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add("General"); Pkg.Apps.add(url="https://github.com/aires-id/AiresDB")'
 ```
 
-Jalankan server di terminal pertama:
+**Windows PowerShell**
+
+```powershell
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.Apps.add(url=\"https://github.com/aires-id/AiresDB\")'
+```
+
+**Windows Command Prompt (`cmd.exe`)**
+
+```bat
+julia -e "using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.Apps.add(url=\"https://github.com/aires-id/AiresDB\")"
+```
+
+> [!NOTE]
+> The backslashes before the inner quotation marks in the Windows commands are
+> intentional. They ensure that Windows passes the URL to Julia correctly. A
+> command copied from a Unix example with outer single quotes will fail in
+> Command Prompt with `character literal contains multiple characters`.
+
+> [!NOTE]
+> A first installation can take a few minutes while Julia downloads and
+> precompiles dependencies. Please keep the terminal open until it reports that
+> the `airesdb` app was installed.
+
+> [!TIP]
+> The shorter `Pkg.Apps.add("AiresDB")` form will work only after General
+> registration is complete. For now, please use the GitHub URL command above.
+
+### 3. Add the Julia app directory to `PATH`
+
+Julia places app launchers in `~/.julia/bin`. Add that directory to the current
+terminal session if `airesdb` is not found.
+
+**Linux or macOS**
 
 ```sh
-airesdb server
+export PATH="$HOME/.julia/bin:$PATH"
 ```
 
-Pada start pertama, server meminta password untuk user `root`. TinyServer bind
-ke `127.0.0.1:1972` dan menyimpan data di `./data` secara default.
+**Windows PowerShell**
 
-Buka terminal kedua untuk menjalankan monitor dengan command yang tetap:
-
-```sh
-airesdb -u root -p
+```powershell
+$env:Path += ";$HOME\.julia\bin"
 ```
 
-Linux/macOS perlu menambahkan `~/.julia/bin` ke `PATH`. Windows CMD dapat
-menambahkan `%USERPROFILE%\.julia\bin` untuk sesi terminal saat ini:
+**Windows Command Prompt**
 
 ```bat
 set "PATH=%PATH%;%USERPROFILE%\.julia\bin"
 ```
 
-Dukungan app di Julia 1.12 masih berstatus eksperimental.
+First, confirm that the launcher works:
 
-Selama paket belum masuk General, instalasi langsung dari GitHub tersedia di
-[petunjuk instalasi](INSTALL.md). Untuk pengembangan dari checkout:
-
-```sh
-julia --project=. -e "using Pkg; Pkg.instantiate(); Pkg.precompile()"
-julia --project=. -m AiresDB server
+```text
+airesdb --help
 ```
 
-## Backup dan restore native
+Then check the installed AiresDB version. On Linux, macOS, or PowerShell, run:
 
-Backup native mengambil prefix WAL yang konsisten di bawah lock, menghitung
-SHA-256, lalu mempublikasikannya secara atomic. Sidecar `.aires.pages` tidak
-disalin karena hanya cache turunan; sidecar akan dibangun ulang saat database
-hasil restore dibuka.
+```sh
+julia -e 'using Pkg; Pkg.Apps.status()'
+```
 
-Untuk job maintenance atau cron, gunakan API path-based:
+Command Prompt users should use:
+
+```bat
+julia -e "using Pkg; Pkg.Apps.status()"
+```
+
+You should see `AiresDB v0.1.0` and the `airesdb` app in the output.
+
+> [!TIP]
+> The `PATH` commands above affect only the current terminal. Add
+> `~/.julia/bin` to your shell profile or user environment variables when you
+> are ready to make the command available permanently.
+
+### 4. Start TinyServer
+
+Open the first terminal and run:
+
+```text
+airesdb server
+```
+
+On the first start, AiresDB asks you to create and confirm the password for the
+`root` user. By default, TinyServer listens only on `127.0.0.1:1972` and stores
+data in `./data`.
+
+Keep this terminal open while you use AiresDB.
+
+### 5. Open the CLI monitor
+
+Open a second terminal and run:
+
+```text
+airesdb -u root -p
+```
+
+Enter the password created in the first terminal. When the
+`AiresDB [(none)]>` prompt appears, the CLI is ready. For example:
+
+```text
+Buat 'Demo' -:
+Pilih 'Demo' -:
+.current
+.exit
+```
+
+That is the complete installation flow. For package-only installation, updates,
+source checkouts, and troubleshooting, see the
+[detailed installation guide](INSTALL.md).
+
+## Native backup and restore
+
+Native backup captures a consistent WAL prefix while holding the required lock,
+calculates its SHA-256 checksum, and publishes the result atomically. The
+`.aires.pages` sidecar is not copied because it is a derived cache and is rebuilt
+when the restored database is opened.
+
+For maintenance jobs or scheduled tasks, use the path-based API:
 
 ```sh
 julia --project=. -e 'using AiresDB; AiresDB.backup_database!("./data", "Perusahaan", "./backup/Perusahaan.aires.bak")'
 julia --project=. -e 'using AiresDB; AiresDB.restore_database!("./data-restored", "Perusahaan", "./backup/Perusahaan.aires.bak")'
 ```
 
-Restore ke database yang sudah ada membutuhkan `overwrite=true` dan seluruh
-session/proses yang memakai target harus dihentikan terlebih dahulu:
+Restoring over an existing database requires `overwrite=true`. Stop every
+session and AiresDB process that uses the target before running it:
 
 ```julia
 using AiresDB
@@ -118,25 +218,25 @@ AiresDB.restore_database!("./data", "Perusahaan", "./backup/Perusahaan.aires.bak
     overwrite=true)
 ```
 
-Hasil backup sudah divalidasi dari header, ukuran, checksum, dan seluruh frame
-WAL sebelum dianggap berhasil. Nama database di dalam backup harus sama dengan
-nama target restore; ini mencegah backup tertukar secara diam-diam.
+A backup is accepted only after its header, size, checksum, and every WAL frame
+have been validated. Its embedded database name must match the restore target,
+which helps prevent accidental backup mix-ups.
 
-Untuk reclaim fisik `.aires.pages` setelah banyak update/delete, jalankan
-maintenance saat hanya ada satu session dan satu proses AiresDB yang aktif:
+To reclaim physical space in `.aires.pages` after many updates or deletes, run
+compaction while only one AiresDB process and one session are active:
 
 ```julia
 using AiresDB
 AiresDB.compact_page_store!("./data", "Perusahaan")
 ```
 
-`vacuum!`/`.vacuum` tetap membersihkan history MVCC secara logis. Compact fisik
-adalah operasi maintenance terpisah dan dapat mengganti sidecar dari WAL yang
-authoritative.
+`vacuum!` and `.vacuum` remove old MVCC history logically. Physical compaction
+is a separate maintenance operation that may replace the sidecar from the
+authoritative WAL.
 
-## AiresQL dalam satu menit
+## AiresQL in one minute
 
-Setiap statement diakhiri dengan `-:`.
+Every statement ends with `-:`.
 
 ```text
 Buat 'Perusahaan' -:
@@ -161,10 +261,10 @@ Tabel_Upt 'Karyawan' Isi 'Gaji = 9000000' Dengan 'No = 1' -:
 Gabungkan -:
 ```
 
-Lihat [referensi AiresQL](docs/AIRESQL.md) dan
-[contoh script](examples/demo.txt).
+See the [AiresQL reference](docs/AIRESQL.md) and the
+[example script](examples/demo.txt).
 
-## Arsitektur
+## Architecture
 
 ```text
 CLI / Browser / Python / PHP / C# / Go / Java / Julia
@@ -181,194 +281,202 @@ CLI / Browser / Python / PHP / C# / Go / Java / Julia
                            Disk
 ```
 
-Client resmi tidak membuka `.aires`, `.aires.pages`, atau `.aires.lock`. Jika
-TinyServer tidak tersedia, client berhenti dengan error koneksi; tidak ada
-fallback embedded. API engine berlevel rendah berada di `AiresDB.Internal` untuk
-test dan benchmark, bukan kontrak aplikasi yang stabil.
+Supported clients never open `.aires`, `.aires.pages`, or `.aires.lock` files.
+If TinyServer is unavailable, the client returns a connection error instead of
+falling back to embedded access. Low-level engine APIs live in
+`AiresDB.Internal` for tests and benchmarks and are not a stable application
+contract.
 
-Empat endpoint publik tersedia pada v0.1.0:
+Version 0.1.0 exposes four public routes:
 
-| Method | Endpoint | Fungsi |
+| Method | Endpoint | Purpose |
 |---|---|---|
-| `GET` | `/health` | Status dan versi server |
-| `POST` | `/session` | Login dan membuat session |
-| `POST` | `/query` | Menjalankan AiresQL pada session |
-| `DELETE` | `/session/{id}` | Menutup session dan rollback transaksi aktif |
+| `GET` | `/health` | Return server health and version information |
+| `POST` | `/session` | Authenticate and create a session |
+| `POST` | `/query` | Run AiresQL in an authenticated session |
+| `DELETE` | `/session` | Close the bearer-token session and roll back its active transaction |
 
-Nilai Decimal dan Money dikirim sebagai object bertanda, misalnya
-`{"type":"decimal","value":"12.34"}`, sementara `NULL` menjadi JSON `null`.
-Contract lengkap dan contoh client tersedia di
-[dokumentasi HTTP API](docs/HTTP_API.md).
+Decimal and Money values use tagged objects such as
+`{"type":"decimal","value":"12.34"}`; `NULL` is represented as JSON `null`.
+See the [HTTP API documentation](docs/HTTP_API.md) for the complete contract and
+client examples.
 
-## Hasil SDEBO-S750
+## SDEBO-S750 results
 
-Pengujian **SDEBO 1.0 / SDEBO-S750** dijalankan pada 9–11 September 2026 terhadap
-AiresDB 0.1.0 dan Firebird 5.0.4.1812. Dataset logis yang sama berisi 750.000 row
-dengan seed `1999`; kedua engine memakai mode embedded dan durability sinkron
-pada host Windows 10, Intel Core i5-2400S 4 core/4 thread, RAM 8 GiB, dan SSD.
+The **SDEBO 1.0 / SDEBO-S750** evaluation ran from 9-11 September 2026 against
+AiresDB 0.1.0 and Firebird 5.0.4.1812. Both engines used the same logical dataset
+of 750,000 rows with seed `1999`, embedded mode, and synchronous durability on a
+Windows 10 host with an Intel Core i5-2400S (4 cores/4 threads), 8 GiB RAM, and
+an SSD.
 
-| Engine | Skor tertimbang | Kelas | Medium Office | Small Bank Technical |
+| Engine | Weighted score | Class | Medium Office | Small Bank Technical |
 |---|---:|---|---|---|
-| **AiresDB 0.1.0** | **3,74 / 4,00** | Excellent | PASS | PASS |
-| Firebird 5.0.4.1812 | 3,93 / 4,00 | Excellent | PASS | PASS |
+| **AiresDB 0.1.0** | **3.74 / 4.00** | Excellent | PASS | PASS |
+| Firebird 5.0.4.1812 | 3.93 / 4.00 | Excellent | PASS | PASS |
 
-Ringkasan median dari lima run performa:
+Median summary from five performance runs:
 
-| Workload | Metrik | AiresDB | Firebird | Hasil relatif |
+| Workload | Metric | AiresDB | Firebird | Relative result |
 |---|---|---:|---:|---|
-| Q01 bulk load | row/detik, lebih tinggi lebih baik | **23.102,86** | 1.808,66 | AiresDB 12,77× |
-| Q02 point lookup | p95 ms, lebih rendah lebih baik | 2,5221 | **0,4062** | Firebird 6,21× |
-| Q03 range query | p95 ms, lebih rendah lebih baik | 2,5378 | **0,3107** | Firebird 8,17× |
-| Q04 ordered query | p95 ms, lebih rendah lebih baik | **2,4700** | 3,8637 | AiresDB 1,56× |
-| Q05 aggregate | p50 ms, lebih rendah lebih baik | 1.094,0640 | **995,9056** | Firebird 1,10× |
-| Q06 join | p50 ms, lebih rendah lebih baik | 27,8837 | **5,4890** | Firebird 5,08× |
-| Q07 full scan | row/detik, lebih tinggi lebih baik | **159.818,51** | 41.399,76 | AiresDB 3,86× |
-| T01 insert transaction | p95 ms, lebih rendah lebih baik | 3,6527 | **1,9083** | Firebird 1,91× |
-| T02 update transaction | p95 ms, lebih rendah lebih baik | 3,4907 | **1,6259** | Firebird 2,15× |
+| Q01 bulk load | rows/s, higher is better | **23,102.86** | 1,808.66 | AiresDB 12.77x |
+| Q02 point lookup | p95 ms, lower is better | 2.5221 | **0.4062** | Firebird 6.21x |
+| Q03 range query | p95 ms, lower is better | 2.5378 | **0.3107** | Firebird 8.17x |
+| Q04 ordered query | p95 ms, lower is better | **2.4700** | 3.8637 | AiresDB 1.56x |
+| Q05 aggregate | p50 ms, lower is better | 1,094.0640 | **995.9056** | Firebird 1.10x |
+| Q06 join | p50 ms, lower is better | 27.8837 | **5.4890** | Firebird 5.08x |
+| Q07 full scan | rows/s, higher is better | **159,818.51** | 41,399.76 | AiresDB 3.86x |
+| T01 insert transaction | p95 ms, lower is better | 3.6527 | **1.9083** | Firebird 1.91x |
+| T02 update transaction | p95 ms, lower is better | 3.4907 | **1.6259** | Firebird 2.15x |
 
-Gate correctness AiresDB lulus untuk 1.000 transfer atomik plus lima crash
-boundary, 200 siklus rollback, concurrency empat worker tanpa lost update, lima
-process-kill recovery, reopen/index verification, dan tiga skenario korupsi tanpa
-silent mismatch. Soak 15 menit menyelesaikan 20.298 operasi tanpa error; memory
-growth tercatat 13,90% dan memperoleh grade B.
+AiresDB passed the correctness gate with 1,000 atomic transfers across five
+crash boundaries, 200 rollback cycles, four-worker concurrency without lost
+updates, five process-kill recoveries, reopen/index verification, and three
+corruption scenarios without silent mismatch. The 15-minute soak completed
+20,298 operations without errors; memory growth was 13.90%, earning grade B.
 
-Interpretasi hasil ini mempunyai batas penting:
+Please keep these limitations in mind when interpreting the results:
 
-- host mempunyai 4 logical CPU, di bawah rekomendasi dokumen 8 thread;
-- hard power-off VM tidak tersedia, sehingga tiap engine diuji dengan lima
-  external process termination;
-- R01 dijalankan sebelum backup native tersedia sehingga memakai offline
-  checkpoint dan file copy; API native di source tree sekarang memvalidasi WAL
-  dan restore secara atomic;
-- percobaan T05 awal yang tidak diberi skor menemukan gangguan lifecycle ketika
-  beberapa `Engine` terpisah dalam satu proses ditutup saat worker lain commit;
-  ownership lease PageStore dan regression test sekarang menutup kasus itu;
-- label “Small Bank Technical PASS” adalah gate teknis SDEBO, bukan sertifikasi,
-  audit keamanan, atau persetujuan penggunaan perbankan.
+- The host had 4 logical CPUs, below the document's 8-thread recommendation.
+- Hard VM power-off was unavailable, so each engine used five external process
+  terminations.
+- R01 ran before native backup was available and therefore used an offline
+  checkpoint plus file copy. The current native API validates WAL and publishes
+  restores atomically.
+- An early, unscored T05 attempt found an engine/PageStore lifecycle issue when
+  separate `Engine` objects in one process closed while another worker
+  committed. PageStore ownership leases and regression tests now cover it.
+- "Small Bank Technical PASS" is an SDEBO engineering gate, not a certification,
+  security audit, or approval for banking use.
 
-Bukti publik yang ringan disimpan di repository:
+Lightweight public evidence is included in the repository:
 
-- [laporan PDF](Standard%20Database%20for%20Banking%20and%20Office%20Test/SDEBO-S750-AiresDB-vs-Firebird-20260909/SDEBO_Report.pdf);
-- [hasil terstruktur JSON](Standard%20Database%20for%20Banking%20and%20Office%20Test/SDEBO-S750-AiresDB-vs-Firebird-20260909/result.json) dan
-  [CSV](Standard%20Database%20for%20Banking%20and%20Office%20Test/SDEBO-S750-AiresDB-vs-Firebird-20260909/result.csv);
-- [environment](Standard%20Database%20for%20Banking%20and%20Office%20Test/SDEBO-S750-AiresDB-vs-Firebird-20260909/environment.json),
-  [raw metrics](Standard%20Database%20for%20Banking%20and%20Office%20Test/SDEBO-S750-AiresDB-vs-Firebird-20260909/raw/), dan
-  [recovery evidence](Standard%20Database%20for%20Banking%20and%20Office%20Test/SDEBO-S750-AiresDB-vs-Firebird-20260909/recovery/);
-- [spesifikasi SDEBO 1.0](Standard%20Database%20for%20Banking%20and%20Office%20Test/SDEBO_Test_Specification_v1.0_publication.docx).
+- [PDF report](Standard%20Database%20for%20Banking%20and%20Office%20Test/SDEBO-S750-AiresDB-vs-Firebird-20260909/SDEBO_Report.pdf)
+- [Structured JSON result](Standard%20Database%20for%20Banking%20and%20Office%20Test/SDEBO-S750-AiresDB-vs-Firebird-20260909/result.json)
+  and [CSV result](Standard%20Database%20for%20Banking%20and%20Office%20Test/SDEBO-S750-AiresDB-vs-Firebird-20260909/result.csv)
+- [Environment](Standard%20Database%20for%20Banking%20and%20Office%20Test/SDEBO-S750-AiresDB-vs-Firebird-20260909/environment.json),
+  [raw metrics](Standard%20Database%20for%20Banking%20and%20Office%20Test/SDEBO-S750-AiresDB-vs-Firebird-20260909/raw/),
+  and [recovery evidence](Standard%20Database%20for%20Banking%20and%20Office%20Test/SDEBO-S750-AiresDB-vs-Firebird-20260909/recovery/)
+- [SDEBO 1.0 specification](Standard%20Database%20for%20Banking%20and%20Office%20Test/SDEBO_Test_Specification_v1.0_publication.docx)
 
-Database kerja, backup, dataset hasil generate, dan file sementara berukuran
-besar sengaja tidak dilacak Git. Semua bukti memiliki daftar SHA-256 dan dapat
-direproduksi memakai [harness SDEBO](Standard%20Database%20for%20Banking%20and%20Office%20Test/harness/).
+Large working databases, backups, generated datasets, and temporary files are
+intentionally excluded from Git. All evidence includes SHA-256 manifests and
+can be reproduced with the
+[SDEBO harness](Standard%20Database%20for%20Banking%20and%20Office%20Test/harness/).
 
-## Status v0.1.0
+## Version 0.1.0 status
 
-Gunakan rilis ini dengan satu shared `Engine` per data root di dalam proses
-server, backup native yang sudah diuji restore, penyimpanan lokal yang
-mendukung durable flush, dan TinyServer pada loopback. TinyServer kini
-menyediakan TLS native (TLS 1.3+), role `admin`/`reader`, login lockout, dan
-audit JSONL fail-closed. Akses LAN/public wajib memakai certificate dan private
-key; tidak tersedia insecure bypass untuk binding non-loopback.
+For evaluation deployments, use one shared `Engine` per data root inside the
+server process, tested native backups, local storage with durable flush support,
+and TinyServer on loopback. TinyServer provides native TLS 1.3+, `admin` and
+`reader` roles, login lockout, bounded requests, and fail-closed JSONL auditing.
+LAN or public access requires a certificate and private key; non-loopback
+plaintext has no bypass.
 
-Pekerjaan utama sebelum rekomendasi produksi finansial:
+The main work remaining before recommending AiresDB for financial production is:
 
-1. memperluas stress concurrency, fault injection, hard power-off, dan audit
-   eksternal;
-2. menambah rotasi credential, centralized audit retention, mTLS opsional, dan
-   hardening jaringan lanjutan;
-3. menekan penggunaan memory dan tail latency pada soak serta mixed workload;
-4. memperluas planner, physical operator, dan observability I/O.
+1. Broader concurrency stress, fault injection, hard-power-off testing, and an
+   independent audit.
+2. Credential rotation, centralized audit retention, optional mTLS, and further
+   network hardening.
+3. Lower memory use and tail latency under soak and mixed workloads.
+4. Broader planner, physical operator, and I/O observability coverage.
 
-Binary format internal delta/checkpoint belum menjadi API eksternal yang stabil,
-dan migrasi format legacy bersifat satu arah. Baca
-[catatan rilis v0.1.0](docs/RELEASE-v0.1.0.md) sebelum upgrade serta
-[roadmap](docs/ROADMAP.md) untuk pekerjaan berikutnya.
+The internal delta/checkpoint format is not yet a stable external API, and
+legacy format migration is one-way. Please read the
+[v0.1.0 release notes](docs/RELEASE-v0.1.0.md) before upgrading and the
+[roadmap](docs/ROADMAP.md) for planned work.
 
-## Keamanan dan operasi
+## Security and operations
 
-TinyServer bind ke loopback secara default. Binding non-loopback memerlukan
-TLS native:
+TinyServer binds to loopback by default. A non-loopback listener requires native
+TLS:
 
 ```text
 airesdb server --host 0.0.0.0 --tls-cert-file server.crt --tls-key-file server.key
 airesdb -u root -p --host db.example --tls --tls-ca-file ca.crt
 ```
 
-Tanpa TLS, binding non-loopback selalu ditolak. Reverse proxy lokal harus
-mengakses listener loopback; koneksi antar-host tetap wajib memakai TLS native.
+Without TLS, every non-loopback bind is rejected. A reverse proxy on the same
+host should connect to the loopback listener; cross-host connections must still
+use native TLS.
 
-Password `root` disimpan sebagai hash PBKDF2-HMAC-SHA256 dengan salt acak;
-credential file mendukung role `admin` dan `reader`. Reader hanya dapat
-menjalankan query baca/metadata, sedangkan mutasi dan maintenance memerlukan
-admin. Login gagal dilimit dengan lockout per user, session memiliki idle dan
-umur absolut, request aktif serta ukuran header dibatasi, dan keputusan RBAC
-memakai AST hasil parser. Audit JSONL default
-`.airesdb-audit.jsonl` mencatat event, user, role, action, status, dan hash
-query serta connection ID—tanpa password, bearer token, atau teks query. Audit
-berotasi ke `.1` pada 64 MiB dan request ditolak bila log tidak dapat ditulis.
-Jika mutasi selesai tetapi acknowledgement gagal, client menerima
-`Commit Outcome Unknown` dan wajib memeriksa state sebelum retry. Token session
-berasal dari random source sistem operasi dan hanya diterima lewat
-`Authorization: Bearer`.
+The `root` password is stored as a salted PBKDF2-HMAC-SHA256 hash. The credential
+file supports `admin` and `reader` roles: readers may run read-only queries and
+metadata commands, while mutations and maintenance require an administrator.
+Authentication uses bounded per-user lockout, and sessions have both idle and
+absolute lifetimes. RBAC decisions use the parsed AiresQL AST.
 
-Default resource limit:
+The default `.airesdb-audit.jsonl` log records events, users, roles, actions,
+statuses, query hashes, and connection IDs without storing passwords, bearer
+tokens, or query text. It rotates to `.1` at 64 MiB and requests fail closed when
+the log cannot be written. If a mutation finishes but its acknowledgement fails,
+the client receives `Commit Outcome Unknown` and should inspect state before
+retrying. Session tokens come from the operating system's secure random source
+and are accepted only through `Authorization: Bearer`.
 
-| Batas | Default |
+Default resource limits:
+
+| Limit | Default |
 |---|---:|
 | HTTP header | 32 KiB |
 | Request body | 8 MiB |
 | Concurrent requests | 128 |
 | Active sessions | 64 |
-| Idle session timeout | 10 menit |
-| Maximum session lifetime | 60 menit |
-| Query result rows | 100.000 |
-| Query execution time | 30 detik |
+| Idle session timeout | 10 minutes |
+| Maximum session lifetime | 60 minutes |
+| Query result rows | 100,000 |
+| Query execution time | 30 seconds |
 | JSON response body | 64 MiB |
 | Query memory before spill | 64 MiB |
 | Query spill budget | 1 GiB |
 | Audit log rotation | 64 MiB |
 
-Laporkan kerentanan sesuai [SECURITY.md](SECURITY.md).
+Please report vulnerabilities through [SECURITY.md](SECURITY.md).
 
-## Pengembangan dan verifikasi
+## Development and verification
 
 ```sh
 julia --startup-file=no --project=. -e "using Pkg; Pkg.test()"
 ```
 
-Suite mencakup lexer/parser, AiresQL, tipe exact, MVCC, WAL/recovery, ARSP-4,
-PageStore, B+Tree, TinyServer, autentikasi, resource limit, persistence,
-transaksi, serta benchmark correctness. Workload TPC-C-derived dan TPC-H-derived
-di repository bukan hasil resmi atau tersertifikasi TPC.
+The suite covers the lexer/parser, AiresQL, exact numeric types, MVCC,
+WAL/recovery, ARSP-4, PageStore, B+Tree, TinyServer, authentication, resource
+limits, persistence, transactions, and benchmark correctness. The TPC-C-derived
+and TPC-H-derived workloads in this repository are not official or certified
+TPC results.
 
-Dokumen utama:
+Main documentation:
 
-- [Arsitektur](docs/ARCHITECTURE.md)
+- [Architecture](docs/ARCHITECTURE.md)
 - [AiresQL](docs/AIRESQL.md)
-- [Transaksi dan MVCC](docs/TRANSACTIONS.md)
-- [Format file](docs/FORMAT.md)
-- [Storage ARSP-4](docs/STORAGE.md)
-- [WAL dan recovery](docs/WAL.md)
+- [Transactions and MVCC](docs/TRANSACTIONS.md)
+- [File format](docs/FORMAT.md)
+- [ARSP-4 storage](docs/STORAGE.md)
+- [WAL and recovery](docs/WAL.md)
 - [TinyServer](docs/TINYSERVER.md)
 - [HTTP API](docs/HTTP_API.md)
 - [CLI](docs/CLI.md)
-- [Benchmark](docs/BENCHMARKS.md)
-- [Audit teknis v0.1.0](docs/AUDIT-v0.1.0.md)
-- [Panduan kontribusi](CONTRIBUTING.md)
+- [Benchmarks](docs/BENCHMARKS.md)
+- [v0.1.0 technical audit](docs/AUDIT-v0.1.0.md)
+- [Contributing guide](CONTRIBUTING.md)
 
-## Lisensi
+## License
 
-AiresDB didistribusikan di bawah **University of Illinois/NCSA Open Source
-License** dengan identifier SPDX `NCSA`. Teks lisensi lengkap dipusatkan di
-[LICENSE](LICENSE), dan cakupan distribusinya dijelaskan di [NOTICE](NOTICE).
-File source produk memakai header SPDX singkat; seluruh teks lisensi tidak perlu
-diulang pada setiap file.
+AiresDB is distributed under the **University of Illinois/NCSA Open Source
+License**, SPDX identifier `NCSA`. The complete license text is in
+[LICENSE](LICENSE), and [NOTICE](NOTICE) explains its distribution scope.
+Product source files use short SPDX headers instead of repeating the full
+license in every file.
 
-Redistribusi source harus mempertahankan copyright notice, syarat, dan
-disclaimer. Distribusi binary harus mereproduksinya dalam dokumentasi atau
-material distribusi. Nama AiresDB, pemegang hak cipta, dan kontributor tidak
-boleh digunakan untuk endorsement tanpa izin tertulis.
+Source redistributions must retain the copyright notice, terms, and disclaimer.
+Binary distributions must reproduce them in documentation or other included
+materials. The AiresDB name and the names of copyright holders or contributors
+may not be used for endorsement without written permission.
 
-Made by open aires Team, Institut Teknologi Sumatera
-Team Leader: Aires Zam Wibisono
-Benchmarking Specialist: I Made Raditya Mahardika
-Support Engineer : Suma Yasa
+## Team
+
+AiresDB is built by the **Open Aires Team** at Institut Teknologi Sumatera:
+
+- **Team Lead:** Aires Zam Wibisono
+- **Benchmarking Specialist:** I Made Raditya Mahardika
+- **Support Engineer:** Suma Yasa
