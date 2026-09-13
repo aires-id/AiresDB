@@ -63,6 +63,35 @@ query(server, token, text) = request_json("POST", server_url(server) * "/query",
     @test TinyServerConfig().audit_max_bytes == 64 * 1024 * 1024
     @test TinyServerConfig().max_failed_logins == 5
     @test TinyServerConfig().max_tracked_login_users == 1024
+    @test TS.CLIENT_HTTP_IDLE_TIMEOUT_NS <
+        round(Int64, TS.DEFAULT_HTTP_READ_HEADER_TIMEOUT * 1_000_000_000)
+
+    @testset "CLI replaces server-expired pooled connections" begin
+        mktempdir() do directory
+            server = start_fixture(directory)
+            client = TS._new_http_client()
+            token = nothing
+            try
+                status, logged_in = TS._http_json("POST", server_url(server) * "/session",
+                    (; user="root", password=PASSWORD); client)
+                @test status == 201
+                token = String(logged_in["session"])
+
+                sleep(TS.DEFAULT_HTTP_READ_HEADER_TIMEOUT + 2)
+
+                status, response = TS._http_json("POST", server_url(server) * "/query",
+                    (; query="Buat 'AfterIdle' -:"); client,
+                    headers=["Authorization" => "Bearer $token"])
+                @test status == 200
+                @test response["ok"] === true
+                @test response["database"] == "AfterIdle"
+            finally
+                token === nothing || TS._close_remote_session(server_url(server), token; client)
+                close(client)
+                stop_tinyserver!(server)
+            end
+        end
+    end
 
     @testset "network binding and query result limits" begin
         mktempdir() do directory
