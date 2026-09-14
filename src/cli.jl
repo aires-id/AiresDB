@@ -262,6 +262,7 @@ function _parse_cli_options(args::Vector{String})
         "max_query_spill_bytes" => DEFAULT_MAX_QUERY_SPILL_BYTES,
         "tls" => false, "tls_ca_file" => nothing,
         "tls_cert_file" => nothing, "tls_key_file" => nothing,
+        "cors_allowed_origins" => String[],
         "audit_log_file" => DEFAULT_AUDIT_LOG_FILE,
         "audit_max_bytes" => DEFAULT_AUDIT_MAX_BYTES,
         "max_failed_logins" => DEFAULT_MAX_FAILED_LOGINS,
@@ -278,17 +279,24 @@ function _parse_cli_options(args::Vector{String})
                    "--max-query-seconds", "--max-response-body", "--max-query-memory-bytes",
                    "--max-query-spill-bytes", "--tls-ca-file", "--tls-cert-file",
                    "--tls-key-file", "--audit-log-file", "--audit-max-bytes",
-                   "--max-failed-logins", "--login-lockout-seconds", "--max-tracked-login-users")
+                   "--max-failed-logins", "--login-lockout-seconds", "--max-tracked-login-users",
+                   "--cors-allow-origin")
             index < length(args) || throw(ArgumentError("$arg requires a value."))
             index += 1; value = args[index]
             key = arg in ("-h", "--host") ? "host" : arg in ("-P", "--port") ? "port" :
-                  arg in ("-u", "--user") ? "user" : replace(arg[3:end], '-' => '_')
-            options[key] = key in ("port", "max_header_bytes", "max_request_body",
+                  arg in ("-u", "--user") ? "user" :
+                  arg == "--cors-allow-origin" ? "cors_allowed_origins" :
+                  replace(arg[3:end], '-' => '_')
+            if key == "cors_allowed_origins"
+                push!(options[key], value)
+            else
+                options[key] = key in ("port", "max_header_bytes", "max_request_body",
                                    "max_concurrent_requests", "max_sessions", "max_result_rows", "max_response_body",
                                    "max_query_memory_bytes", "max_query_spill_bytes", "audit_max_bytes",
                                    "max_failed_logins", "max_tracked_login_users") ? parse(Int, value) :
                            key in ("idle_timeout", "max_session_lifetime", "max_query_seconds",
                                    "login_lockout_seconds") ? parse(Float64, value) : value
+            end
         elseif arg == "-p"
             options["ask_password"] = true
         elseif arg == "--no-banner"
@@ -324,7 +332,7 @@ function _server_password(config::TinyServerConfig)
 end
 
 function _print_usage(io::IO=stdout)
-    println(io, "airesdb server [--host HOST] [--port PORT] [--data-root DIR] [--tls-cert-file FILE --tls-key-file FILE] [--audit-log-file FILE] [--audit-max-bytes BYTES] [--max-header-bytes BYTES] [--max-request-body BYTES] [--max-concurrent-requests N] [--max-sessions N] [--idle-timeout N] [--max-session-lifetime N] [--max-failed-logins N] [--login-lockout-seconds N] [--max-result-rows N] [--max-query-seconds N] [--max-response-body BYTES] [--max-query-memory-bytes BYTES] [--max-query-spill-bytes BYTES] [--verbose]")
+    println(io, "airesdb server [--host HOST] [--port PORT] [--data-root DIR] [--tls-cert-file FILE --tls-key-file FILE] [--cors-allow-origin ORIGIN]... [--audit-log-file FILE] [--audit-max-bytes BYTES] [--max-header-bytes BYTES] [--max-request-body BYTES] [--max-concurrent-requests N] [--max-sessions N] [--idle-timeout N] [--max-session-lifetime N] [--max-failed-logins N] [--login-lockout-seconds N] [--max-result-rows N] [--max-query-seconds N] [--max-response-body BYTES] [--max-query-memory-bytes BYTES] [--max-query-spill-bytes BYTES] [--verbose]")
     println(io, "airesdb -u USER -p [-h HOST] [-P PORT] [--tls [--tls-ca-file FILE]] [--file SCRIPT] [--no-banner]")
 end
 
@@ -345,6 +353,7 @@ function cli_main(args::Vector{String}=ARGS)
                 max_response_body=options["max_response_body"],
                 max_query_memory_bytes=options["max_query_memory_bytes"], max_query_spill_bytes=options["max_query_spill_bytes"],
                 tls_cert_file=options["tls_cert_file"], tls_key_file=options["tls_key_file"],
+                cors_allowed_origins=options["cors_allowed_origins"],
                 audit_log_file=options["audit_log_file"], audit_max_bytes=options["audit_max_bytes"],
                 max_failed_logins=options["max_failed_logins"],
                 login_lockout_seconds=options["login_lockout_seconds"],

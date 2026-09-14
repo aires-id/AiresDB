@@ -72,35 +72,35 @@ you have a different version, follow the friendly
 
 AiresDB is not yet listed in Julia's General registry, so the GitHub URL is the
 current supported installation source. `Pkg.Apps.add` creates an isolated Julia
-app environment and the `airesdb` launcher. The first part of each command adds
-the General registry only when a fresh Julia installation does not have it yet;
-AiresDB's dependencies are resolved from that registry.
+app environment and the `airesdb` launcher. The command adds the default General
+registry only when a fresh Julia installation has no reachable registry. The
+repository URL is passed as a Julia argument, avoiding nested quote escaping.
 
 Choose the command for your terminal and copy it exactly.
 
 **Linux, macOS, or a Unix shell**
 
 ```sh
-julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add("General"); Pkg.Apps.add(url="https://github.com/aires-id/AiresDB")'
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(); Pkg.Apps.add(url=ARGS[1])' https://github.com/aires-id/AiresDB
 ```
 
 **Windows PowerShell**
 
 ```powershell
-julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.Apps.add(url=\"https://github.com/aires-id/AiresDB\")'
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(); Pkg.Apps.add(url=ARGS[1])' https://github.com/aires-id/AiresDB
 ```
 
 **Windows Command Prompt (`cmd.exe`)**
 
 ```bat
-julia -e "using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.Apps.add(url=\"https://github.com/aires-id/AiresDB\")"
+julia -e "using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(); Pkg.Apps.add(url=ARGS[1])" https://github.com/aires-id/AiresDB
 ```
 
 > [!NOTE]
-> The backslashes before the inner quotation marks in the Windows commands are
-> intentional. They ensure that Windows passes the URL to Julia correctly. A
-> command copied from a Unix example with outer single quotes will fail in
-> Command Prompt with `character literal contains multiple characters`.
+> PowerShell uses outer single quotes; Command Prompt uses outer double quotes.
+> Do not copy the Unix or PowerShell form into Command Prompt. That shell does
+> not use single quotes for argument grouping and Julia reports `character
+> literal contains multiple characters`.
 
 > [!NOTE]
 > A first installation can take a few minutes while Julia downloads and
@@ -172,6 +172,16 @@ On the first start, AiresDB asks you to create and confirm the password for the
 data in `./data`.
 
 Keep this terminal open while you use AiresDB.
+
+In a second terminal, verify that the server is ready before logging in:
+
+```text
+curl http://127.0.0.1:1972/health
+```
+
+The response is `{"ok":true,"server":"AiresDB","version":"0.1.0"}`.
+In PowerShell, `Invoke-RestMethod http://127.0.0.1:1972/health` is an equivalent
+command.
 
 ### 5. Open the CLI monitor
 
@@ -303,7 +313,8 @@ Version 0.1.0 exposes four public routes:
 Decimal and Money values use tagged objects such as
 `{"type":"decimal","value":"12.34"}`; `NULL` is represented as JSON `null`.
 See the [HTTP API documentation](docs/HTTP_API.md) for the complete contract and
-client examples.
+client examples. For a website deployment, including a secure browser setup,
+see [Website integration](docs/WEB.md).
 
 ## SDEBO-S750 results
 
@@ -468,6 +479,7 @@ Main documentation:
 - [WAL and recovery](docs/WAL.md)
 - [TinyServer](docs/TINYSERVER.md)
 - [HTTP API](docs/HTTP_API.md)
+- [Website integration](docs/WEB.md)
 - [CLI](docs/CLI.md)
 - [Benchmarks](docs/BENCHMARKS.md)
 - [v0.1.0 technical audit](docs/AUDIT-v0.1.0.md)

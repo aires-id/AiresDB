@@ -28,6 +28,7 @@ const DEFAULT_TLS_HANDSHAKE_TIMEOUT = 10.0
 const DEFAULT_HTTP_READ_HEADER_TIMEOUT = 10.0
 const DEFAULT_HTTP_IO_TIMEOUT = 30.0
 const DEFAULT_TLS_MIN_VERSION = HTTP.TLS.TLS1_3_VERSION
+const DEFAULT_CORS_ALLOWED_ORIGINS = String[]
 const CREDENTIALS_MUTEX = ReentrantLock()
 const DUMMY_PASSWORD_SALT = fill(UInt8(0xa5), PASSWORD_SALT_BYTES)
 const DUMMY_PASSWORD = "AiresDB invalid credential"
@@ -53,6 +54,8 @@ Base.@kwdef struct TinyServerConfig
     tls_key_file::Union{Nothing,String} = nothing
     tls_handshake_timeout::Float64 = DEFAULT_TLS_HANDSHAKE_TIMEOUT
     tls_min_version::UInt16 = DEFAULT_TLS_MIN_VERSION
+    # Browser access stays disabled unless every permitted origin is listed.
+    cors_allowed_origins::Vector{String} = copy(DEFAULT_CORS_ALLOWED_ORIGINS)
     audit_log_file::String = DEFAULT_AUDIT_LOG_FILE
     audit_max_bytes::Int = DEFAULT_AUDIT_MAX_BYTES
     max_failed_logins::Int = DEFAULT_MAX_FAILED_LOGINS
@@ -93,6 +96,80 @@ _tls_enabled(config::TinyServerConfig) = config.tls_cert_file !== nothing && con
 server_url(server::TinyServer) = (_tls_enabled(server.config) ? "https://" : "http://") *
     HTTP.HostResolvers.join_host_port(server.config.host, server.config.port)
 _credential_path(config::TinyServerConfig) = joinpath(config.data_root, ROOT_CREDENTIAL_FILE)
+
+function _validate_cors_origin(origin::AbstractString)
+    value = strip(String(origin))
+    ncodeunits(value) <= 512 || throw(ArgumentError("CORS origin is too long."))
+    value == "*" && throw(ArgumentError("CORS wildcard origins are not supported."))
+    isempty(value) && throw(ArgumentError("CORS origin must not be empty."))
+    any(iscntrl, value) && throw(ArgumentError("CORS origin must not contain control characters."))
+    uri = try
+        HTTP.URI(value)
+    catch
+        throw(ArgumentError("CORS origin must be an http or https origin."))
+    end
+    scheme = lowercase(uri.scheme)
+    scheme in ("http", "https") || throw(ArgumentError("CORS origin must use http or https."))
+    isempty(uri.host) && throw(ArgumentError("CORS origin must include a host."))
+    isempty(uri.userinfo) || throw(ArgumentError("CORS origin must not include user credentials."))
+    isempty(uri.path) || throw(ArgumentError("CORS origin must not include a path."))
+    isempty(uri.query) || throw(ArgumentError("CORS origin must not include a query."))
+    isempty(uri.fragment) || throw(ArgumentError("CORS origin must not include a fragment."))
+    value
+end
+
+function _validate_cors_origins!(config::TinyServerConfig)
+    seen = Set{String}()
+    for origin in config.cors_allowed_origins
+        value = _validate_cors_origin(origin)
+        value in seen && throw(ArgumentError("CORS origin is listed more than once: $value"))
+        push!(seen, value)
+    end
+    nothing
+end
+
+function _allowed_cors_origin(config::TinyServerConfig, request::HTTP.Request)
+    origin = strip(HTTP.header(request.headers, "Origin", ""))
+    isempty(origin) && return nothing
+    origin in config.cors_allowed_origins ? origin : nothing
+end
+
+function _append_vary_origin!(response::HTTP.Response)
+    current = HTTP.header(response.headers, "Vary", "")
+    values = filter(!isempty, strip.(split(current, ',')))
+    any(value -> lowercase(value) == "origin", values) || push!(values, "Origin")
+    HTTP.setheader(response, "Vary" => join(values, ", "))
+    response
+end
+
+function _apply_cors_headers!(response::HTTP.Response, origin::AbstractString; preflight::Bool=false)
+    HTTP.setheader(response, "Access-Control-Allow-Origin" => String(origin))
+    _append_vary_origin!(response)
+    if preflight
+        HTTP.setheader(response, "Access-Control-Allow-Methods" => "GET, POST, DELETE, OPTIONS")
+        HTTP.setheader(response, "Access-Control-Allow-Headers" => "Authorization, Content-Type")
+        HTTP.setheader(response, "Access-Control-Max-Age" => "600")
+    end
+    response
+end
+
+function _cors_preflight_response(config::TinyServerConfig, request::HTTP.Request, path::AbstractString)
+    origin = _allowed_cors_origin(config, request)
+    origin === nothing && return _server_error(403, "A1006", "Origin is not allowed.";
+        category="Authorization Error")
+    path in ("/health", "/session", "/query") ||
+        return _server_error(404, "A1003", "Route not found."; category="Request Error")
+    requested_method = uppercase(strip(HTTP.header(request.headers, "Access-Control-Request-Method", "")))
+    requested_method in ("GET", "POST", "DELETE") ||
+        return _server_error(405, "A1003", "Requested method is not allowed."; category="Request Error")
+    requested_headers = filter(!isempty, strip.(split(lowercase(
+        HTTP.header(request.headers, "Access-Control-Request-Headers", "")), ',')))
+    allowed_headers = Set(("authorization", "content-type"))
+    all(header -> header in allowed_headers, requested_headers) ||
+        return _server_error(403, "A1006", "Requested headers are not allowed.";
+            category="Authorization Error")
+    _apply_cors_headers!(HTTP.Response(204), origin; preflight=true)
+end
 
 function _audit_path(config::TinyServerConfig)
     candidate = String(config.audit_log_file)
@@ -855,10 +932,15 @@ function tinyserver_handler(server::TinyServer, request::HTTP.Request)
             category="Resource Limit")
         HTTP.setheader(response, "Retry-After" => "1")
         response.close = true
+        origin = _allowed_cors_origin(server.config, request)
+        origin === nothing || _apply_cors_headers!(response, origin)
         return response
     end
     try
-        _handle_tinyserver_request(server, request)
+        response = _handle_tinyserver_request(server, request)
+        origin = _allowed_cors_origin(server.config, request)
+        origin === nothing || _apply_cors_headers!(response, origin)
+        response
     finally
         _release_request!(server)
     end
@@ -870,7 +952,9 @@ function _handle_tinyserver_request(server::TinyServer, request::HTTP.Request)
     try
         method = uppercase(String(request.method))
         path = split(String(request.target), '?'; limit=2)[1]
-        if method == "GET" && path == "/health"
+        if method == "OPTIONS"
+            return _cors_preflight_response(server.config, request, path)
+        elseif method == "GET" && path == "/health"
             return _json_response(200, (; ok=true, server="AiresDB", version=AIRESDB_SERVER_VERSION))
         elseif method == "POST" && path == "/session"
             body = _request_json(request, server.config)
@@ -1024,6 +1108,7 @@ function start_tinyserver(config::TinyServerConfig=TinyServerConfig(); password=
     config.max_query_memory_bytes > 0 || throw(ArgumentError("max_query_memory_bytes must be positive"))
     config.max_query_spill_bytes >= config.max_query_memory_bytes ||
         throw(ArgumentError("max_query_spill_bytes must be at least max_query_memory_bytes"))
+    _validate_cors_origins!(config)
     config.audit_max_bytes > 0 || throw(ArgumentError("audit_max_bytes must be positive"))
     config.max_failed_logins > 0 || throw(ArgumentError("max_failed_logins must be positive"))
     isfinite(config.login_lockout_seconds) && config.login_lockout_seconds > 0 ||

@@ -165,7 +165,7 @@ TinyServer membuat satu Engine dan memakai satu Session per login. Token dari
 yang sama. Session yang berbeda berbagi cache database, rantai versi, dan mutex
 handle melalui Engine server.
 
-`DELETE /session/{id}`, idle timeout, dan shutdown menutup Session. Penutupan
+`DELETE /session`, idle timeout, dan shutdown menutup Session. Penutupan
 melakukan rollback bila transaksi aktif. Transaksi tidak boleh bersarang,
 berpindah database, atau menjalankan checkpoint pada session yang sama. Client
 tidak membuat Engine atau membuka file storage.
