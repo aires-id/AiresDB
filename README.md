@@ -220,7 +220,11 @@ AiresDB.restore_database!("./data", "Perusahaan", "./backup/Perusahaan.aires.bak
 
 A backup is accepted only after its header, size, checksum, and every WAL frame
 have been validated. Its embedded database name must match the restore target,
-which helps prevent accidental backup mix-ups.
+which helps prevent accidental backup mix-ups. Inside one AiresDB process,
+restore publication and database opening share a maintenance gate, preventing a
+new session from attaching between validation and atomic replacement. The WAL
+lock coordinates publication between processes, but operators must still stop
+every process using the target before an overwrite restore.
 
 To reclaim physical space in `.aires.pages` after many updates or deletes, run
 compaction while only one AiresDB process and one session are active:
@@ -406,6 +410,13 @@ metadata commands, while mutations and maintenance require an administrator.
 Authentication uses bounded per-user lockout, and sessions have both idle and
 absolute lifetimes. RBAC decisions use the parsed AiresQL AST.
 
+For `/query`, TinyServer checks the body-size limit and validates the bearer
+session before parsing JSON. Query-owned row allocations are charged against
+the memory budget, large hash joins spill to bounded temporary storage, and the
+JSON response size is preflighted before its final buffer is allocated. The
+response must fit both its configured limit and the query memory remaining
+after row materialization.
+
 The default `.airesdb-audit.jsonl` log records events, users, roles, actions,
 statuses, query hashes, and connection IDs without storing passwords, bearer
 tokens, or query text. It rotates to `.1` at 64 MiB and requests fail closed when
@@ -427,7 +438,7 @@ Default resource limits:
 | Query result rows | 100,000 |
 | Query execution time | 30 seconds |
 | JSON response body | 64 MiB |
-| Query memory before spill | 64 MiB |
+| Query-owned memory (also the join spill threshold) | 64 MiB |
 | Query spill budget | 1 GiB |
 | Audit log rotation | 64 MiB |
 
@@ -443,7 +454,9 @@ The suite covers the lexer/parser, AiresQL, exact numeric types, MVCC,
 WAL/recovery, ARSP-4, PageStore, B+Tree, TinyServer, authentication, resource
 limits, persistence, transactions, and benchmark correctness. The TPC-C-derived
 and TPC-H-derived workloads in this repository are not official or certified
-TPC results.
+TPC results. Pull-request CI runs the package suite on Ubuntu and Windows with
+both one and four Julia threads, and verifies the installed app launcher on each
+operating system.
 
 Main documentation:
 

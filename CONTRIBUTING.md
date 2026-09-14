@@ -1,29 +1,31 @@
-# Berkontribusi ke AiresDB
+# Contributing to AiresDB
 
-Gunakan Julia 1.12 dan buat perubahan sekecil mungkin tanpa mengubah rasa
-AiresQL. Perubahan pada storage atau transaksi harus mempertahankan batas MVCC,
-WAL-before-data, recovery, dan `Commit Outcome Unknown`.
+Thank you for helping improve AiresDB. Use Julia 1.12 and keep each change as
+small and focused as practical without changing the character of AiresQL.
+Storage and transaction changes must preserve MVCC boundaries, WAL-before-data,
+recovery behavior, and `Commit Outcome Unknown` semantics.
 
-1. Buat branch dari `main`.
-2. Jalankan `julia --startup-file=no --project=. -e 'using Pkg; Pkg.test()'`.
-3. Tambahkan test yang membuktikan bug atau perilaku baru bila diperlukan.
-4. Jangan commit database `.aires`, folder `work/`, sysimage, cache, atau hasil
-   benchmark sementara.
-5. Jelaskan perubahan perilaku, alasan, hasil test, dan risiko tersisa pada pull
-   request.
+1. Create a branch from `main`.
+2. Run `julia --startup-file=no --project=. -e 'using Pkg; Pkg.test()'`.
+3. Add a regression test for each bug fix or behavior change when practical.
+4. Do not commit `.aires` databases, the `work/` directory, system images,
+   caches, or temporary benchmark output.
+5. Describe the behavior change, reason, test results, and remaining risks in
+   the pull request.
 
-Dengan mengirim kontribusi, Anda menyetujui bahwa kontribusi tersebut
-didistribusikan di bawah University of Illinois/NCSA Open Source License yang
-tercantum pada `LICENSE`, kecuali ada persetujuan tertulis lain dari maintainer.
-File produk baru di `src/` atau `bin/` harus diawali dengan:
+By submitting a contribution, you agree that it is distributed under the
+University of Illinois/NCSA Open Source License in `LICENSE`, unless the
+maintainer agrees otherwise in writing. New product files under `src/` or
+`bin/` must begin with:
 
 ```text
 # SPDX-FileCopyrightText: 2026 Aires Zam Wibisono
 # SPDX-License-Identifier: NCSA
 ```
 
-Contributor boleh menambahkan baris `SPDX-FileCopyrightText` miliknya sendiri.
-Jangan menyalin seluruh teks lisensi ke setiap file.
+Contributors may add their own `SPDX-FileCopyrightText` line. Do not copy the
+complete license text into every file.
 
-Benchmark TPC-C/TPC-H dalam proyek ini bersifat TPC-derived. Jangan menyebut
-hasilnya tersertifikasi, compliant, `tpmC`, atau `QphH`.
+The TPC-C and TPC-H benchmarks in this project are TPC-derived engineering
+workloads. Do not describe their results as certified, compliant, `tpmC`, or
+`QphH`.

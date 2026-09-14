@@ -1,6 +1,6 @@
 # AiresDB monitor CLI
 
-CLI resmi adalah client HTTP untuk TinyServer.
+The official CLI is an HTTP client for TinyServer.
 
 ```sh
 airesdb -u root -p
@@ -8,28 +8,31 @@ airesdb -h 192.168.1.20 -P 1972 -u root -p
 airesdb -u root -p --no-banner --file script.txt
 ```
 
-Password disembunyikan pada TTY. Banner hanya muncul pada terminal interaktif
-dan dapat dimatikan dengan `--no-banner`. Prompt awal adalah
-`AiresDB [(none)]>`; sesudah pemilihan database menjadi `AiresDB [Nama]>`.
-Statement multiline memakai prompt `->` dan wajib berakhir dengan `-:`.
+Passwords are hidden on an interactive terminal. The banner appears only in an
+interactive session and can be disabled with `--no-banner`. The initial prompt
+is `AiresDB [(none)]>` and changes to `AiresDB [Name]>` after selecting a
+database. Multiline statements use the `->` prompt and must end with `-:`.
 
-Perintah monitor: `.help`, `.databases`, `.tables`, `.schema Nama`, `.current`,
-`.mvcc`, `.checkpoint`, `.vacuum`, `.compact`, `.cancel`, dan `.exit`. Perintah engine
-dikirim lewat session server. `.exit` menghapus session.
+Monitor commands are `.help`, `.databases`, `.tables`, `.schema Name`,
+`.current`, `.mvcc`, `.checkpoint`, `.vacuum`, `.compact`, `.cancel`, and
+`.exit`. Engine commands run through the server session. `.exit` deletes the
+remote session.
 
-`.vacuum` membersihkan history MVCC secara logis. `.compact` melakukan rebuild
-fisik `.aires.pages` dan membutuhkan database maintenance dengan satu session
-aktif serta satu proses AiresDB.
+`.vacuum` removes obsolete MVCC history logically. `.compact` physically
+rebuilds `.aires.pages` and requires database maintenance with one active
+session and one AiresDB process.
 
-Jika server tidak tersedia, CLI mencetak `ERROR A1000`, keluar non-zero, dan tidak
-membuka file database lokal.
+If the server is unavailable, the CLI prints `ERROR A1000`, exits with a nonzero
+status, and never opens a local database file as a fallback.
 
-Untuk query analitik besar, mode server menyediakan batas external hash spill:
+For larger analytical queries, server mode provides external hash-join spill
+limits:
 
 ```sh
 airesdb server --max-query-memory-bytes 67108864 --max-query-spill-bytes 1073741824
 ```
 
-Saat memory query melewati batas pertama, hash join mempartisi input ke run
-sementara. Batas kedua mencegah penggunaan disk tanpa batas; run dibersihkan
-setelah query selesai atau gagal.
+The query memory budget limits query-owned row materialization and determines
+when a hash join partitions its build input into temporary runs. The spill
+budget prevents unbounded temporary disk use. TinyServer removes runs after the
+query succeeds or fails.

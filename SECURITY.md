@@ -2,37 +2,45 @@
 
 ## Supported version
 
-AiresDB 0.1.x adalah jalur yang saat ini dipelihara.
+AiresDB 0.1.x is the currently maintained release line.
 
 ## Reporting a vulnerability
 
-Laporkan kerentanan melalui **Private vulnerability reporting** pada tab
-Security repository GitHub. Jangan membuka issue publik untuk laporan yang
-memuat exploit, credential, data privat, atau langkah reproduksi yang berisiko.
+Please use **Private vulnerability reporting** on the repository's GitHub
+Security tab. Do not open a public issue for a report that contains an exploit,
+credentials, private data, or risky reproduction steps.
 
-Sertakan versi Julia dan AiresDB, sistem operasi, dampak, langkah reproduksi
-minimal, serta apakah masalah menyentuh parser, WAL, recovery, MVCC, atau format
-page. Jangan menyertakan database produksi atau secret asli.
+Include the Julia and AiresDB versions, operating system, impact, minimal
+reproduction steps, and whether the issue affects the parser, WAL, recovery,
+MVCC, networking, or page format. Never attach a production database or a real
+secret.
 
 ## TinyServer
 
-TinyServer bind ke `127.0.0.1:1972` secara default. Binding non-loopback harus
-dipilih eksplisit dan wajib memakai TLS certificate/private key native. Tidak
-ada insecure bypass untuk binding non-loopback; HTTP plaintext hanya tersedia
-pada listener loopback.
+TinyServer binds to `127.0.0.1:1972` by default. A non-loopback bind must be
+selected explicitly and requires a native TLS certificate and private key.
+There is no insecure bypass for a non-loopback listener; plaintext HTTP is
+available only on loopback.
 
-Password `root` disimpan sebagai hash PBKDF2-HMAC-SHA256 dengan salt acak melalui
-OpenSSL. Token session berasal dari random source sistem operasi dan dikirim
-client resmi melalui bearer header; token pada body atau URL ditolak. Role
-`reader` hanya boleh membaca; operasi
-mutasi dan maintenance memerlukan `admin`. Login failure memakai lockout per
-user. Session mempunyai idle timeout dan umur absolut; ukuran header serta
-request aktif juga dibatasi. Audit JSONL mencatat security event dan hash query
-tanpa password, token, atau teks query, berotasi pada batas ukuran, dan
-fail-closed bila tidak dapat ditulis. Mutasi yang selesai tetapi gagal
-di-acknowledge dilaporkan sebagai `Commit Outcome Unknown` agar tidak di-retry
-secara buta. Health endpoint tidak mengungkap data root, path WAL, username OS,
-atau internal process.
+Passwords are stored as salted PBKDF2-HMAC-SHA256 hashes through OpenSSL.
+Session tokens come from the operating system's secure random source and the
+official client sends them only through the bearer header; tokens in a request
+body or URL are rejected. The `reader` role is read-only, while mutations and
+maintenance require `admin`.
 
-Client tidak pernah membuka `.aires`, `.aires.pages`, atau `.aires.lock`. Laporkan
-sebagai kerentanan bila CLI dapat mengakses database tanpa TinyServer.
+Login failures use bounded per-user lockout. Sessions have idle and absolute
+lifetimes. Header size, request body size, active requests, result rows, query
+time, query-owned row allocations, response size, and spill bytes are bounded.
+For `/query`, TinyServer validates the bearer session before parsing JSON, which
+prevents unauthenticated requests from consuming the JSON parser budget.
+
+The JSONL audit log records security events and query hashes without passwords,
+tokens, or query text. It rotates at its configured size and requests fail
+closed if the log cannot be written. A mutation that completed but could not be
+acknowledged is reported as `Commit Outcome Unknown`; inspect database state
+before retrying it. The health endpoint does not reveal the data root, WAL path,
+operating-system username, or process internals.
+
+The official CLI must never open `.aires`, `.aires.pages`, or `.aires.lock`
+files. Please report it as a vulnerability if the CLI can access a database
+without TinyServer.

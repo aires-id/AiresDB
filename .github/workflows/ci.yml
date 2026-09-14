@@ -9,10 +9,20 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }} / ${{ matrix.threads }} thread(s)
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        threads: [1, 4]
     steps:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v3
@@ -21,10 +31,17 @@ jobs:
       - name: Instantiate
         run: julia --startup-file=no --project=. -e 'using Pkg; Pkg.instantiate()'
       - name: Test
-        run: julia --startup-file=no --threads=1 --project=. -e 'using Pkg; Pkg.test()'
-      - name: App entry point
+        run: julia --startup-file=no --threads=${{ matrix.threads }} --project=. -e 'using Pkg; Pkg.test()'
+      - name: App entry point (Unix)
+        if: matrix.threads == 1 && runner.os != 'Windows'
         run: |
           julia --startup-file=no -e 'using Pkg; Pkg.Apps.develop(path=pwd())'
           echo "$HOME/.julia/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.julia/bin:$PATH"
-          airesdb -u root -p --help
+          airesdb --help
+      - name: App entry point (Windows)
+        if: matrix.threads == 1 && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          julia --startup-file=no -e 'using Pkg; Pkg.Apps.develop(path=pwd())'
+          & "$env:USERPROFILE\.julia\bin\airesdb.bat" --help
