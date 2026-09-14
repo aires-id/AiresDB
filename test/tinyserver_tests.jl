@@ -55,6 +55,9 @@ query(server, token, text) = request_json("POST", server_url(server) * "/query",
     @test TinyServerConfig().max_result_rows == 100_000
     @test TinyServerConfig().max_query_seconds == 30.0
     @test TinyServerConfig().max_response_body == 64 * 1024 * 1024
+    @test TS._json_serialized_upper_bound((; text="quote: \" and control: \n")) >=
+        ncodeunits(JSON3.write((; text="quote: \" and control: \n")))
+    @test_throws AiresError TS._json_response(200,(; value=repeat("x",128));max_bytes=64)
     @test !TinyServerConfig().allow_insecure_network
     @test TinyServerConfig().tls_cert_file === nothing
     @test TinyServerConfig().tls_key_file === nothing
@@ -160,6 +163,12 @@ query(server, token, text) = request_json("POST", server_url(server) * "/query",
                 token = String(logged_in["session"])
                 @test length(token) == 64
                 @test logged_in["connection_id"] == 1
+
+                malformed = HTTP.Request("POST", "/query",
+                    ["Content-Type" => "application/json", "Authorization" => "Bearer $token"], UInt8['{'])
+                malformed_response = tinyserver_handler(server, malformed)
+                @test malformed_response.status == 400
+                @test server.sessions[token].active_requests == 0
 
                 status, created = query(server, token, "Buat 'Perusahaan' -:")
                 @test status == 200
@@ -470,6 +479,14 @@ query(server, token, text) = request_json("POST", server_url(server) * "/query",
                 response = tinyserver_handler(server, request)
                 @test response.status == 413
 
+                malformed = HTTP.Request("POST", "/query", ["Content-Type" => "application/json"], UInt8['{'])
+                response = tinyserver_handler(server, malformed)
+                @test response.status == 401
+                invalid = HTTP.Request("POST", "/query",
+                    ["Content-Type" => "application/json", "Authorization" => "Bearer invalid"], UInt8['{'])
+                response = tinyserver_handler(server, invalid)
+                @test response.status == 401
+
                 lock(server.mutex) do
                     server.active_requests = server.config.max_concurrent_requests
                 end
@@ -481,6 +498,24 @@ query(server, token, text) = request_json("POST", server_url(server) * "/query",
                 lock(server.mutex) do
                     server.active_requests = 0
                 end
+            finally
+                stop_tinyserver!(server)
+            end
+        end
+
+
+        mktempdir() do directory
+            server = start_fixture(directory; max_query_memory_bytes=512,
+                max_query_spill_bytes=512, max_result_rows=1_000)
+            try
+                _, logged_in = login(server)
+                token = String(logged_in["session"])
+                query(server, token, "Buat 'MemoryLimited' -:")
+                query(server, token, "Buat Tabel 'T' Isi 'Id & Payload' Dengan 'Id = I(P) & Payload = C(1000)' -:")
+                query(server, token, "Isi Tabel 'T' '1 & $(repeat("x",400))' -:")
+                status, limited = query(server, token, "Tampilkan 'T' -:")
+                @test status == 429
+                @test limited["error"]["category"] == "Resource Limit"
             finally
                 stop_tinyserver!(server)
             end

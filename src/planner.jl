@@ -271,8 +271,9 @@ function _external_hash_join(leftrows::Vector{Row},rightrows::Vector{Row},left_i
                 for (key,right_position,rightrow) in right
                     _query_budget_tick!()
                     for (left_position,leftrow) in get(buckets,key,Tuple{Int,Row}[])
-                        _query_budget_work!()
-                        push!(partition_result,(left_position,right_position,vcat(leftrow,rightrow)))
+                        joined = vcat(leftrow,rightrow)
+                        _query_budget_work!(joined)
+                        push!(partition_result,(left_position,right_position,joined))
                     end
                 end
             else
@@ -283,8 +284,9 @@ function _external_hash_join(leftrows::Vector{Row},rightrows::Vector{Row},left_i
                 for (key,left_position,leftrow) in left
                     _query_budget_tick!()
                     for (right_position,rightrow) in get(buckets,key,Tuple{Int,Row}[])
-                        _query_budget_work!()
-                        push!(partition_result,(left_position,right_position,vcat(leftrow,rightrow)))
+                        joined = vcat(leftrow,rightrow)
+                        _query_budget_work!(joined)
+                        push!(partition_result,(left_position,right_position,joined))
                     end
                 end
             end
@@ -314,7 +316,8 @@ function _hash_join_preserve_left_keys(leftrows::Vector{Row},rightrows::Vector{R
         for left in leftrows
             _query_budget_tick!(); key = _join_row_key(left,left_indices,floating); key === nothing && continue
             for right in get(buckets,key,Row[])
-                _query_budget_work!(); push!(result,vcat(left,right))
+                joined = vcat(left,right)
+                _query_budget_work!(joined); push!(result,joined)
             end
         end
         return result
@@ -333,7 +336,8 @@ function _hash_join_preserve_left_keys(leftrows::Vector{Row},rightrows::Vector{R
     for left in leftrows
         _query_budget_tick!(); key = _join_row_key(left,left_indices,floating); key === nothing && continue
         for right in get(matches,key,Row[])
-            _query_budget_work!(); push!(result,vcat(left,right))
+            joined = vcat(left,right)
+            _query_budget_work!(joined); push!(result,joined)
         end
     end
     result
@@ -342,8 +346,9 @@ end
 function _cartesian_join(leftrows::Vector{Row},rightrows::Vector{Row})
     result = Row[]
     for left in leftrows, right in rightrows
-        _query_budget_work!()
-        push!(result,vcat(left,right))
+        joined = vcat(left,right)
+        _query_budget_work!(joined)
+        push!(result,joined)
     end
     result
 end

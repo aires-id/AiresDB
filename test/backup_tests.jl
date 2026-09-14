@@ -28,6 +28,27 @@ const A = AiresDB
         execute!(source,"Tabel_Upt 'T' Isi 'Value = 20' Dengan 'ID = 1' -:")
         close(source)
 
+        gate_ready = Channel{Nothing}(1)
+        gate_release = Channel{Nothing}(1)
+        gate_holder = @async lock(A._DATABASE_MAINTENANCE_LOCK) do
+            put!(gate_ready,nothing)
+            take!(gate_release)
+        end
+        take!(gate_ready)
+        opener = @async begin
+            blocked = Session(root)
+            try
+                execute!(blocked,"Pilih 'Bank' -:")
+            finally
+                close(blocked)
+            end
+        end
+        yield()
+        @test !istaskdone(opener)
+        put!(gate_release,nothing)
+        wait(gate_holder)
+        wait(opener)
+
         restored_root = joinpath(root,"restored")
         restored = restore_database!(restored_root,"Bank",artifact)
         @test restored.database == "Bank"

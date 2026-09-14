@@ -212,7 +212,6 @@ function restore_database!(root::AbstractString,database::AbstractString,backup:
     isfile(target) && !overwrite && storageerror("Database '$name' sudah ada; gunakan overwrite=true.")
     !overwrite && isfile(page_store_path(target)) &&
         storageerror("Sidecar '$name.aires.pages' sudah ada; gunakan overwrite=true atau bersihkan instalasi lama.")
-    _native_backup_restore_guard(target)
     temporary = nothing
     try
         materialized = _native_backup_materialize(backup_path,dirname(target))
@@ -220,9 +219,14 @@ function restore_database!(root::AbstractString,database::AbstractString,backup:
         metadata = materialized.metadata
         materialized.database == name ||
             storageerror("Nama database backup '$(materialized.database)' tidak cocok dengan target '$name'.")
-        with_wal_lock(target) do
-            isfile(target) && !overwrite && storageerror("Database '$name' dibuat proses lain saat restore.")
-            durable_replace(temporary,target;replace=overwrite && isfile(target))
+        lock(_DATABASE_MAINTENANCE_LOCK) do
+            _native_backup_restore_guard(target)
+            with_wal_lock(target) do
+                isfile(target) && !overwrite && storageerror("Database '$name' dibuat proses lain saat restore.")
+                !overwrite && isfile(page_store_path(target)) &&
+                    storageerror("Sidecar '$name.aires.pages' dibuat proses lain saat restore.")
+                durable_replace(temporary,target;replace=overwrite && isfile(target))
+            end
         end
         isfile(temporary*".lock") && rm(temporary*".lock";force=true)
         _wal_forget_private!(temporary)

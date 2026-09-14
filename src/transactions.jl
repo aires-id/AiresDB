@@ -10,6 +10,7 @@ mutable struct QueryBudget
     spill_directory::String
     emitted_rows::Int
     intermediate_rows::Int
+    allocated_bytes::Int
     spill_bytes::Int
     spill_runs::Int
     ticks::UInt64
@@ -55,6 +56,22 @@ function _query_budget_emit!(count::Integer=1)
     nothing
 end
 
+function _query_budget_memory!(value)
+    budget = _current_query_budget()
+    budget === nothing && return nothing
+    bytes = Base.summarysize(value)
+    bytes >= 0 || storageerror("Jumlah byte alokasi query tidak valid.")
+    budget.allocated_bytes <= budget.max_memory_bytes - bytes ||
+        throw(AiresError("Resource Limit", "Query allocation exceeds the $(budget.max_memory_bytes)-byte memory budget."))
+    budget.allocated_bytes += bytes
+    nothing
+end
+
+function _query_budget_emit!(row::AbstractVector)
+    _query_budget_emit!(1)
+    _query_budget_memory!(row)
+end
+
 function _query_budget_work!(count::Integer=1)
     budget = _current_query_budget()
     budget === nothing && return nothing
@@ -63,6 +80,12 @@ function _query_budget_work!(count::Integer=1)
         throw(AiresError("Resource Limit", "Intermediate query melebihi batas $(budget.max_intermediate_rows) row."))
     budget.intermediate_rows += Int(count)
     nothing
+end
+
+
+function _query_budget_work!(row::AbstractVector)
+    _query_budget_work!(1)
+    _query_budget_memory!(row)
 end
 
 function _query_budget_enter!()
@@ -284,7 +307,7 @@ function migrate_legacy_locked!(store::BinaryRowStore,path::String)
     end
 end
 
-function open_database!(session::Session,raw::String;create::Bool=false)
+function _open_database_unlocked!(session::Session,raw::String;create::Bool=false)
     in_transaction(session) && fail("Tidak dapat membuat atau mengganti database selama transaksi.")
     name = database_name(raw); path = joinpath(session.root,name*".aires")
     key = Sys.iswindows() ? lowercase(path) : path
@@ -327,6 +350,12 @@ function open_database!(session::Session,raw::String;create::Bool=false)
     end
     session.handle = handle; session.path = path; session.database = handle.current; session.revision = handle.csn
     status_result(create ? "Database '$name.aires' dibuat dan dipilih." : "Database '$name.aires' dipilih.")
+end
+
+function open_database!(session::Session,raw::String;create::Bool=false)
+    lock(_DATABASE_MAINTENANCE_LOCK) do
+        _open_database_unlocked!(session,raw;create)
+    end
 end
 
 function _begin_transaction!(session::Session;physical_reads::Bool=false)
