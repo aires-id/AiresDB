@@ -19,33 +19,33 @@ the version is different, install Julia 1.12 using the
 ## 2. Install the CLI app from GitHub
 
 AiresDB is not yet available from Julia's General registry. Use the GitHub URL
-for the current installation. The command also bootstraps the General registry
-when a fresh Julia installation does not have it yet, because AiresDB resolves
-its dependencies from General.
+for the current installation. The command bootstraps the default General
+registry only when a fresh Julia installation has no reachable registry. The
+repository URL is passed as a Julia argument, avoiding nested quote escaping.
 
 ### Linux, macOS, or a Unix shell
 
 ```sh
-julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add("General"); Pkg.Apps.add(url="https://github.com/aires-id/AiresDB")'
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(); Pkg.Apps.add(url=ARGS[1])' https://github.com/aires-id/AiresDB
 ```
 
 ### Windows PowerShell
 
 ```powershell
-julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.Apps.add(url=\"https://github.com/aires-id/AiresDB\")'
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(); Pkg.Apps.add(url=ARGS[1])' https://github.com/aires-id/AiresDB
 ```
 
 ### Windows Command Prompt (`cmd.exe`)
 
 ```bat
-julia -e "using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.Apps.add(url=\"https://github.com/aires-id/AiresDB\")"
+julia -e "using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(); Pkg.Apps.add(url=ARGS[1])" https://github.com/aires-id/AiresDB
 ```
 
 > [!NOTE]
-> Please copy the command for your terminal exactly. The escaped quotation marks
-> in the Windows examples are intentional. Command Prompt does not treat outer
-> single quotes like a Unix shell; using them causes Julia's
-> `character literal contains multiple characters` parse error.
+> PowerShell uses outer single quotes; Command Prompt uses outer double quotes.
+> Do not copy the Unix or PowerShell form into Command Prompt. That shell does
+> not use single quotes for argument grouping and Julia reports `character
+> literal contains multiple characters`.
 
 > [!NOTE]
 > A cold first installation can take a few minutes while Julia downloads and
@@ -114,6 +114,15 @@ airesdb server
 The first start asks you to create and confirm the `root` password. Keep this
 terminal open. TinyServer listens on `127.0.0.1:1972` by default.
 
+In a second terminal, verify that the server is ready:
+
+```text
+curl http://127.0.0.1:1972/health
+```
+
+The response is `{"ok":true,"server":"AiresDB","version":"0.1.0"}`.
+In PowerShell, `Invoke-RestMethod http://127.0.0.1:1972/health` is equivalent.
+
 ## 6. Open the CLI monitor
 
 In a second terminal, run:
@@ -140,19 +149,19 @@ the next command-line argument.
 To update a GitHub installation on Linux or macOS, run:
 
 ```sh
-julia -e 'using Pkg; Pkg.Apps.update("AiresDB")'
+julia -e 'using Pkg; Pkg.Apps.update()'
 ```
 
 In Windows PowerShell, run:
 
 ```powershell
-julia -e 'using Pkg; Pkg.Apps.update(\"AiresDB\")'
+julia -e 'using Pkg; Pkg.Apps.update()'
 ```
 
 In Command Prompt, run:
 
 ```bat
-julia -e "using Pkg; Pkg.Apps.update(\"AiresDB\")"
+julia -e "using Pkg; Pkg.Apps.update()"
 ```
 
 Run `Pkg.Apps.status()` again to confirm the installed revision and version.
@@ -170,19 +179,19 @@ installing the standalone app launcher.
 ### Linux, macOS, or a Unix shell
 
 ```sh
-julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add("General"); Pkg.add(url="https://github.com/aires-id/AiresDB")'
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(); Pkg.add(url=ARGS[1])' https://github.com/aires-id/AiresDB
 ```
 
 ### Windows PowerShell
 
 ```powershell
-julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.add(url=\"https://github.com/aires-id/AiresDB\")'
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(); Pkg.add(url=ARGS[1])' https://github.com/aires-id/AiresDB
 ```
 
 ### Windows Command Prompt
 
 ```bat
-julia -e "using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.add(url=\"https://github.com/aires-id/AiresDB\")"
+julia -e "using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(); Pkg.add(url=ARGS[1])" https://github.com/aires-id/AiresDB
 ```
 
 From that Julia environment, use the module entry point:
@@ -201,24 +210,26 @@ After AiresDB is accepted into Julia's General registry, the app installation
 on Linux or macOS will become:
 
 ```sh
-julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add("General"); Pkg.Apps.add("AiresDB")'
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(); Pkg.Apps.add(ARGS[1])' AiresDB
 ```
 
 PowerShell will use:
 
 ```powershell
-julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.Apps.add(\"AiresDB\")'
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(); Pkg.Apps.add(ARGS[1])' AiresDB
 ```
 
 Command Prompt will use:
 
 ```bat
-julia -e "using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.Apps.add(\"AiresDB\")"
+julia -e "using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(); Pkg.Apps.add(ARGS[1])" AiresDB
 ```
 
-The equivalent package-only command will be `Pkg.add("AiresDB")`. These
-package-name-only commands are documented for the future and are not the current
-installation path.
+The equivalent package-only command will be `julia -e 'using Pkg;
+Pkg.add(ARGS[1])' AiresDB` in a Unix shell or PowerShell (use outer double
+quotes around the Julia code in Command Prompt). These package-name-only
+commands are documented for the future and are not the current installation
+path.
 
 ## Development from a checkout
 
@@ -244,7 +255,7 @@ project also declares the `airesdb` Julia 1.12 app in `Project.toml`.
 ### `character literal contains multiple characters`
 
 You probably copied the Unix command into Windows Command Prompt. Use the
-PowerShell or Command Prompt command shown above, including its escaped quotes.
+PowerShell or Command Prompt command shown above with that shell's outer quotes.
 
 ### `airesdb` is not recognized
 

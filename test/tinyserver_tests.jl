@@ -62,6 +62,7 @@ query(server, token, text) = request_json("POST", server_url(server) * "/query",
     @test TinyServerConfig().tls_cert_file === nothing
     @test TinyServerConfig().tls_key_file === nothing
     @test TinyServerConfig().tls_min_version == HTTP.TLS.TLS1_3_VERSION
+    @test TinyServerConfig().cors_allowed_origins == String[]
     @test TinyServerConfig().audit_log_file == ".airesdb-audit.jsonl"
     @test TinyServerConfig().audit_max_bytes == 64 * 1024 * 1024
     @test TinyServerConfig().max_failed_logins == 5
@@ -134,6 +135,58 @@ query(server, token, text) = request_json("POST", server_url(server) * "/query",
                 @test timed_out["error"]["category"] == "Resource Limit"
             finally
                 stop_tinyserver!(server)
+            end
+        end
+    end
+
+    @testset "browser CORS allowlist" begin
+        mktempdir() do directory
+            allowed = "https://app.example"
+            server = start_fixture(directory; cors_allowed_origins=[allowed, "http://localhost:3000"])
+            try
+                preflight = HTTP.Request("OPTIONS", "/query", [
+                    "Origin" => allowed,
+                    "Access-Control-Request-Method" => "POST",
+                    "Access-Control-Request-Headers" => "Authorization, Content-Type",
+                ])
+                response = tinyserver_handler(server, preflight)
+                @test response.status == 204
+                @test HTTP.header(response.headers, "Access-Control-Allow-Origin", "") == allowed
+                @test HTTP.header(response.headers, "Access-Control-Allow-Methods", "") == "GET, POST, DELETE, OPTIONS"
+                @test HTTP.header(response.headers, "Access-Control-Allow-Headers", "") == "Authorization, Content-Type"
+                @test HTTP.header(response.headers, "Vary", "") == "Origin"
+
+                health = tinyserver_handler(server, HTTP.Request("GET", "/health", ["Origin" => allowed]))
+                @test health.status == 200
+                @test HTTP.header(health.headers, "Access-Control-Allow-Origin", "") == allowed
+
+                untrusted_health = tinyserver_handler(server,
+                    HTTP.Request("GET", "/health", ["Origin" => "https://untrusted.example"]))
+                @test untrusted_health.status == 200
+                @test isempty(HTTP.header(untrusted_health.headers, "Access-Control-Allow-Origin", ""))
+
+                blocked = tinyserver_handler(server, HTTP.Request("OPTIONS", "/query", [
+                    "Origin" => "https://untrusted.example",
+                    "Access-Control-Request-Method" => "POST",
+                ]))
+                @test blocked.status == 403
+                @test isempty(HTTP.header(blocked.headers, "Access-Control-Allow-Origin", ""))
+
+                bad_header = tinyserver_handler(server, HTTP.Request("OPTIONS", "/query", [
+                    "Origin" => allowed,
+                    "Access-Control-Request-Method" => "POST",
+                    "Access-Control-Request-Headers" => "X-Unexpected",
+                ]))
+                @test bad_header.status == 403
+                @test HTTP.header(bad_header.headers, "Access-Control-Allow-Origin", "") == allowed
+                @test isempty(HTTP.header(bad_header.headers, "Access-Control-Allow-Headers", ""))
+            finally
+                stop_tinyserver!(server)
+            end
+
+            for origin in ("*", "https://app.example/", "ftp://app.example", "https://user@app.example")
+                @test_throws ArgumentError start_tinyserver(TinyServerConfig(port=rand(25_000:49_000),
+                    data_root=directory, cors_allowed_origins=[origin]); password=PASSWORD)
             end
         end
     end
@@ -535,6 +588,9 @@ query(server, token, text) = request_json("POST", server_url(server) * "/query",
         @test parsed["audit_max_bytes"] === 4096
         @test parsed["max_failed_logins"] === 3
         @test parsed["login_lockout_seconds"] === 90.0
+        _, parsed = TS._parse_cli_options(["server", "--cors-allow-origin", "https://app.example",
+            "--cors-allow-origin", "http://localhost:3000"])
+        @test parsed["cors_allowed_origins"] == ["https://app.example", "http://localhost:3000"]
         @test_throws ArgumentError TS._parse_cli_options(["server", "--allow-insecure-network"])
 
         mktempdir() do directory
