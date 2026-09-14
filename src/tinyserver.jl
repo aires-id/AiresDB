@@ -464,10 +464,59 @@ function _tls_server_config(config::TinyServerConfig)
     )
 end
 
+@inline _saturating_size_add(left::Int, right::Int) =
+    left > typemax(Int) - right ? typemax(Int) : left + right
+
+function _json_string_size(value::AbstractString)
+    total = 2
+    for byte in codeunits(value)
+        extra = byte == UInt8('"') || byte == UInt8('\\') ? 2 : byte < 0x20 ? 6 : 1
+        total = _saturating_size_add(total,extra)
+    end
+    total
+end
+
+function _json_serialized_upper_bound(value)::Int
+    value === nothing && return 4
+    value === missing && return 4
+    value isa Bool && return value ? 4 : 5
+    value isa AbstractString && return _json_string_size(value)
+    value isa Symbol && return _json_string_size(String(value))
+    value isa Integer && return ncodeunits(string(value))
+    value isa AbstractFloat && return max(32,ncodeunits(string(value)))
+    if value isa NamedTuple || value isa AbstractDict
+        total = 2
+        separator = 0
+        for (key,item) in pairs(value)
+            total = _saturating_size_add(total,separator)
+            total = _saturating_size_add(total,_json_string_size(String(key)))
+            total = _saturating_size_add(total,1)
+            total = _saturating_size_add(total,_json_serialized_upper_bound(item))
+            separator = 1
+        end
+        return total
+    end
+    if value isa AbstractArray || value isa Tuple
+        total = 2
+        separator = 0
+        for item in value
+            total = _saturating_size_add(total,separator)
+            total = _saturating_size_add(total,_json_serialized_upper_bound(item))
+            separator = 1
+        end
+        return total
+    end
+    # TinyServer payloads use only the shapes above. Keep the fallback exact for
+    # future small metadata types instead of silently underestimating them.
+    ncodeunits(JSON3.write(value))
+end
+
 function _json_response(status::Int, body; max_bytes::Union{Nothing,Integer}=nothing)
+    max_bytes === nothing || _json_serialized_upper_bound(body) <= max_bytes ||
+        throw(AiresError("Resource Limit", "Response exceeds the $(max_bytes)-byte limit."))
     payload = JSON3.write(body)
     max_bytes === nothing || ncodeunits(payload) <= max_bytes ||
-        throw(AiresError("Resource Limit", "Response melebihi batas $(max_bytes) byte."))
+        throw(AiresError("Resource Limit", "Response exceeds the $(max_bytes)-byte limit."))
     HTTP.Response(status,
         ["Content-Type" => "application/json; charset=utf-8",
          "Cache-Control" => "no-store",
@@ -605,7 +654,14 @@ function _result_payload(result::QueryResult, elapsed_ms::Float64, session::Sess
         end
         push!(types, something(kind, "NULL"))
     end
-    rows = [[_wire_cell(value) for value in row] for row in result.rows]
+    _query_budget_memory!(types)
+    rows = Vector{Any}()
+    sizehint!(rows,length(result.rows))
+    for row in result.rows
+        wire_row = Any[_wire_cell(value) for value in row]
+        _query_budget_memory!(wire_row)
+        push!(rows,wire_row)
+    end
     database = session.database === nothing ? nothing : session.database.name
     (; ok=true, columns=result.columns, types, rows, row_count=length(rows), elapsed_ms, database,
        transaction=in_transaction(session))
@@ -674,7 +730,8 @@ function _server_command(session::Session, line::AbstractString)
     fail("Perintah internal '$command' tidak dikenal. Gunakan .help.")
 end
 
-function _execute_server_query(entry::ServerSession, query::String, config::TinyServerConfig)
+function _execute_server_query(entry::ServerSession, query::String, config::TinyServerConfig,
+                               execution_completed::Base.RefValue{Bool})
     lock(entry.mutex) do
         stripped = strip(query)
         isempty(stripped) && throw(AiresError("Request Error", "Query must not be empty."))
@@ -684,14 +741,16 @@ function _execute_server_query(entry::ServerSession, query::String, config::Tiny
         spill_directory = mktempdir()
         budget = QueryBudget(deadline,config.max_result_rows,intermediate_limit,
             config.max_query_memory_bytes,config.max_query_spill_bytes,spill_directory,
-            0,0,0,0,0,0)
+            0,0,0,0,0,0,0)
         try
-            _with_query_budget(() -> begin
+            payload = _with_query_budget(() -> begin
                 started = time_ns()
                 result = startswith(stripped, ".") ? _server_command(entry.session, stripped) : execute!(entry.session, query)
+                execution_completed[] = true
                 elapsed = (time_ns() - started) / 1_000_000
                 result isa QueryResult ? _result_payload(result, elapsed, entry.session) : _command_payload(String(result), elapsed, entry.session)
             end,budget)
+            (payload=payload,budget=budget)
         finally
             isdir(spill_directory) && rm(spill_directory; recursive=true, force=true)
         end
@@ -818,24 +877,27 @@ function _handle_tinyserver_request(server::TinyServer, request::HTTP.Request)
             user = _string_field(body, "user"); password = _string_field(body, "password")
             return _login_response(server, user, password)
         elseif method == "POST" && path == "/query"
-            body = _request_json(request, server.config)
+            length(request.body) <= server.config.max_request_body ||
+                throw(AiresError("Request Too Large", "Request body exceeds the configured limit."))
             token = _request_session_token(request)
-            query = _string_field(body, "query")
             if token === nothing
-                _audit!(server; event="query_auth_failed", action=_query_action(query),
-                    outcome="missing_or_malformed_token", status=401, path="/query",
-                    query_hash=_query_hash(query))
+                _audit!(server; event="query_auth_failed", action="query",
+                    outcome="missing_or_malformed_token", status=401, path="/query")
                 return _server_error(401, "A1002", "Invalid or expired session."; category="Session Error")
             end
             entry = _take_session(server, token)
             if entry === nothing
-                _audit!(server; event="query_auth_failed", action=_query_action(query),
-                    outcome="invalid_session", status=401, path="/query", query_hash=_query_hash(query))
+                _audit!(server; event="query_auth_failed", action="query",
+                    outcome="invalid_session", status=401, path="/query")
                 return _server_error(401, "A1002", "Invalid or expired session."; category="Session Error")
             end
+            query = ""
             permission = nothing
             executed = false
+            execution_completed = Ref(false)
             try
+                body = _request_json(request, server.config)
+                query = _string_field(body, "query")
                 permission = _required_permission(query)
                 if !_role_allows(entry.role, permission)
                     _audit!(server; event="authorization_denied", user=entry.user, role=entry.role,
@@ -849,9 +911,11 @@ function _handle_tinyserver_request(server::TinyServer, request::HTTP.Request)
                     action=_query_action(query), outcome=String(permission), status=202,
                     path="/query", query_hash=_query_hash(query),
                     connection_id=entry.connection_id)
-                payload = _execute_server_query(entry, query, server.config)
-                executed = true
-                response = _json_response(200, payload; max_bytes=server.config.max_response_body)
+                execution = _execute_server_query(entry, query, server.config, execution_completed)
+                executed = execution_completed[]
+                remaining_memory = max(0,server.config.max_query_memory_bytes - execution.budget.allocated_bytes)
+                response_limit = min(server.config.max_response_body,remaining_memory)
+                response = _json_response(200, execution.payload; max_bytes=response_limit)
                 try
                     _audit!(server; event="query", user=entry.user, role=entry.role,
                         action=_query_action(query), outcome="success", status=response.status,
@@ -866,7 +930,7 @@ function _handle_tinyserver_request(server::TinyServer, request::HTTP.Request)
                 end
                 return response
             catch error
-                if executed && permission == :write
+                if (executed || execution_completed[]) && permission == :write
                     if !_is_audit_error(error)
                         try
                             _audit!(server; event="query_outcome_unknown", user=entry.user,

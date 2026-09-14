@@ -42,11 +42,12 @@ end
 # from extending an Engine's lifetime after an application drops it.
 const _ENGINE_REGISTRY_LOCK = ReentrantLock()
 const _ENGINE_REGISTRY = WeakRef[]
+# Opening a database and publishing a restored WAL must be one process-local
+# critical section. This closes the check/publish race where a new Session
+# could attach to the target after restore validation but before replacement.
+const _DATABASE_MAINTENANCE_LOCK = ReentrantLock()
 
-function _engine_path_key(path::AbstractString)
-    normalized = normpath(abspath(String(path)))
-    Sys.iswindows() ? lowercase(normalized) : normalized
-end
+_engine_path_key(path::AbstractString) = _wal_canonical(String(path))
 
 function _register_engine!(engine::Engine)
     lock(_ENGINE_REGISTRY_LOCK) do
@@ -62,8 +63,11 @@ function _engine_uses_path(path::AbstractString)
         for reference in _ENGINE_REGISTRY
             engine = reference.value
             engine === nothing && continue
-            engine.active_sessions > 0 || continue
-            any(handle -> _engine_path_key(handle.path) == target, values(engine.handles)) && return true
+            in_use = lock(engine.mutex) do
+                engine.active_sessions > 0 &&
+                    any(handle -> _engine_path_key(handle.path) == target, values(engine.handles))
+            end
+            in_use && return true
         end
         false
     end

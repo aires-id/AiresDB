@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the concise Indonesian AiresDB device-benchmark report.
+"""Build a concise English AiresDB device-benchmark report.
 
 Example:
     python benchmark/summarize.py \
@@ -36,8 +36,8 @@ class ReportError(ValueError):
 def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Ringkas benchmark mikro AiresDB, workload turunan TPC-C, dan "
-            "workload turunan TPC-H menjadi Markdown."
+            "Summarize AiresDB microbenchmarks, TPC-C-derived workloads, and "
+            "TPC-H-derived workloads as Markdown."
         )
     )
     parser.add_argument(
@@ -45,21 +45,21 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="append",
         default=[],
         metavar="MICRO_V010.toml",
-        help="Laporan mikro baseline; dapat diulang untuk beberapa run.",
+        help="Baseline microbenchmark report; repeat for multiple runs.",
     )
     parser.add_argument(
         "--current",
         action="append",
         default=[],
         metavar="MICRO_CURRENT.toml",
-        help="Laporan mikro kandidat saat ini; dapat diulang untuk beberapa run.",
+        help="Current candidate microbenchmark report; repeat for multiple runs.",
     )
-    parser.add_argument("--tpcc", metavar="TPCC.toml", help="Laporan workload turunan TPC-C.")
-    parser.add_argument("--tpch", metavar="TPCH.toml", help="Laporan workload turunan TPC-H.")
-    parser.add_argument("--output", required=True, metavar="REPORT.md", help="Lokasi Markdown keluaran.")
+    parser.add_argument("--tpcc", metavar="TPCC.toml", help="TPC-C-derived workload report.")
+    parser.add_argument("--tpch", metavar="TPCH.toml", help="TPC-H-derived workload report.")
+    parser.add_argument("--output", required=True, metavar="REPORT.md", help="Output Markdown path.")
     args = parser.parse_args(argv)
     if not (args.baseline or args.current or args.tpcc or args.tpch):
-        parser.error("berikan paling sedikit satu input benchmark")
+        parser.error("provide at least one benchmark input")
     return args
 
 
@@ -69,43 +69,43 @@ def load_toml(path_text: str) -> tuple[Path, dict[str, Any]]:
         with path.open("rb") as stream:
             parsed = tomllib.load(stream)
     except FileNotFoundError as error:
-        raise ReportError(f"file tidak ditemukan: {path}") from error
+        raise ReportError(f"file not found: {path}") from error
     except tomllib.TOMLDecodeError as error:
-        raise ReportError(f"TOML tidak valid di {path}: {error}") from error
+        raise ReportError(f"invalid TOML in {path}: {error}") from error
     except OSError as error:
-        raise ReportError(f"gagal membaca {path}: {error}") from error
+        raise ReportError(f"could not read {path}: {error}") from error
     if not isinstance(parsed, dict):
-        raise ReportError(f"akar TOML harus berupa tabel: {path}")
+        raise ReportError(f"TOML root must be a table: {path}")
     return path, parsed
 
 
 def table(value: Any, context: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
-        raise ReportError(f"{context} harus berupa tabel TOML")
+        raise ReportError(f"{context} must be a TOML table")
     return value
 
 
 def finite_number(value: Any, context: str, *, nonnegative: bool = True) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ReportError(f"{context} harus berupa angka")
+        raise ReportError(f"{context} must be a number")
     number = float(value)
     if not math.isfinite(number):
-        raise ReportError(f"{context} harus berupa angka terhingga")
+        raise ReportError(f"{context} must be finite")
     if nonnegative and number < 0:
-        raise ReportError(f"{context} tidak boleh negatif")
+        raise ReportError(f"{context} must not be negative")
     return number
 
 
 def integer(value: Any, context: str, *, nonnegative: bool = True) -> int:
     number = finite_number(value, context, nonnegative=nonnegative)
     if not number.is_integer():
-        raise ReportError(f"{context} harus berupa bilangan bulat")
+        raise ReportError(f"{context} must be an integer")
     return int(number)
 
 
 def nearest_rank(values: Sequence[float], fraction: float) -> float:
     if not values:
-        raise ReportError("persentil memerlukan paling sedikit satu sampel")
+        raise ReportError("a percentile requires at least one sample")
     ordered = sorted(values)
     index = max(1, math.ceil(fraction * len(ordered))) - 1
     return ordered[index]
@@ -113,7 +113,7 @@ def nearest_rank(values: Sequence[float], fraction: float) -> float:
 
 def summary_from_samples(samples: Sequence[float]) -> dict[str, float | int]:
     if not samples:
-        raise ReportError("array samples_ms tidak boleh kosong")
+        raise ReportError("samples_ms must not be empty")
     total = math.fsum(samples)
     return {
         "count": len(samples),
@@ -128,13 +128,13 @@ def sample_array(section: Mapping[str, Any], context: str) -> list[float]:
     raw = section.get("samples_ms")
     if not isinstance(raw, list):
         raise ReportError(
-            f"{context}.samples_ms wajib ada agar beberapa run dapat digabung tanpa mengira-ngira persentil"
+            f"{context}.samples_ms is required to pool runs without estimating percentiles"
         )
     samples = [finite_number(value, f"{context}.samples_ms[{index}]") for index, value in enumerate(raw)]
     if not samples:
-        raise ReportError(f"{context}.samples_ms tidak boleh kosong")
+        raise ReportError(f"{context}.samples_ms must not be empty")
     if "count" in section and integer(section["count"], f"{context}.count") != len(samples):
-        raise ReportError(f"{context}.count tidak sama dengan panjang samples_ms")
+        raise ReportError(f"{context}.count does not match the samples_ms length")
     return samples
 
 
@@ -147,7 +147,7 @@ def common_configuration(
     expected = values[0][1]
     if any(value != expected for _, value in values[1:]):
         details = ", ".join(f"{path.name}={value!r}" for path, value in values)
-        raise ReportError(f"konfigurasi {group_name}.{key} berbeda antar-run: {details}")
+        raise ReportError(f"configuration {group_name}.{key} differs between runs: {details}")
     return expected
 
 
@@ -167,8 +167,8 @@ def aggregate_micro(
         "runs": len(loaded),
         "rows": rows,
         "warmup_pairs": warmup,
-        "versions": sorted({str(report.get("engine_version", "tidak tercatat")) for _, report in loaded}),
-        "durability": sorted({str(report.get("durability_label", "tidak tercatat")) for _, report in loaded}),
+        "versions": sorted({str(report.get("engine_version", "not recorded")) for _, report in loaded}),
+        "durability": sorted({str(report.get("durability_label", "not recorded")) for _, report in loaded}),
         "source_paths": [path for path, _ in loaded],
         "reports": [report for _, report in loaded],
     }
@@ -185,7 +185,7 @@ def scalar_summary(section: Mapping[str, Any], context: str) -> dict[str, float 
     required = ("count", "p50_ms", "p95_ms")
     missing = [key for key in required if key not in section]
     if missing:
-        raise ReportError(f"{context} tidak memiliki {', '.join(missing)}")
+        raise ReportError(f"{context} is missing {', '.join(missing)}")
     result: dict[str, float | int] = {
         "count": integer(section["count"], f"{context}.count"),
         "p50_ms": finite_number(section["p50_ms"], f"{context}.p50_ms"),
@@ -201,7 +201,7 @@ def format_number(value: Any, digits: int = 3) -> str:
     if value is None:
         return "—"
     if isinstance(value, bool):
-        return "ya" if value else "tidak"
+        return "yes" if value else "no"
     if isinstance(value, int):
         return f"{value:,}"
     if isinstance(value, float):
@@ -236,36 +236,36 @@ def render_hardware(reports: Sequence[Mapping[str, Any]]) -> list[str]:
     if isinstance(cpu_models, list):
         cpu = ", ".join(dict.fromkeys(str(model) for model in cpu_models))
     elif cpu_models is None:
-        cpu = "tidak tercatat"
+        cpu = "not recorded"
     else:
         cpu = str(cpu_models)
     total_memory = first_present(reports, "total_memory_bytes")
-    memory = "tidak tercatat"
+    memory = "not recorded"
     if total_memory is not None:
         memory = f"{finite_number(total_memory, 'total_memory_bytes') / (1024 ** 3):.2f} GiB"
-    kernel = first_present(reports, "kernel") or "tidak tercatat"
-    architecture = first_present(reports, "architecture") or "tidak tercatat"
+    kernel = first_present(reports, "kernel") or "not recorded"
+    architecture = first_present(reports, "architecture") or "not recorded"
     logical = first_present(reports, "cpu_threads_detected")
-    julia_version = first_present(reports, "julia_version") or "tidak tercatat"
+    julia_version = first_present(reports, "julia_version") or "not recorded"
     julia_threads = first_present(reports, "julia_threads")
     flush = first_present(reports, "commit_flush_mode")
     measured = [str(value) for value in (report.get("measured_on") for report in reports) if value]
 
     lines = [
-        "## Perangkat dan runtime",
+        "## Hardware and runtime",
         "",
-        "| Komponen | Nilai |",
+        "| Component | Value |",
         "|---|---|",
         f"| CPU | {markdown(cpu)} |",
-        f"| Thread logis terdeteksi | {markdown(logical if logical is not None else 'tidak tercatat')} |",
-        f"| Memori total | {memory} |",
-        f"| Sistem | {markdown(kernel)} / {markdown(architecture)} |",
-        f"| Julia | {markdown(julia_version)}; {markdown(julia_threads if julia_threads is not None else 'tidak tercatat')} thread |",
+        f"| Detected logical threads | {markdown(logical if logical is not None else 'not recorded')} |",
+        f"| Total memory | {memory} |",
+        f"| System | {markdown(kernel)} / {markdown(architecture)} |",
+        f"| Julia | {markdown(julia_version)}; {markdown(julia_threads if julia_threads is not None else 'not recorded')} thread(s) |",
     ]
     if flush:
         lines.append(f"| Flush commit | {markdown(flush)} |")
     if measured:
-        lines.append(f"| Rentang pengukuran | {markdown(min(measured))} sampai {markdown(max(measured))} |")
+        lines.append(f"| Measurement range | {markdown(min(measured))} to {markdown(max(measured))} |")
     return lines
 
 
@@ -273,14 +273,14 @@ def render_micro(baseline: dict[str, Any] | None, current: dict[str, Any] | None
     if baseline is None and current is None:
         return []
     lines = [
-        "## Mikro: point read dan point update",
+        "## Microbenchmarks: point read and point update",
         "",
         (
-            "Sampel mentah dari semua run sejenis digabung, lalu p50/p95 dihitung ulang dengan "
-            "metode *nearest-rank*. Throughput dihitung dari jumlah sampel dibagi total waktu sampel."
+            "Raw samples from like-for-like runs are pooled, then p50/p95 are recomputed using "
+            "the *nearest-rank* method. Throughput is the sample count divided by total sample time."
         ),
         "",
-        "| Operasi | Baseline sampel | Baseline p50 (ms) | Baseline p95 (ms) | Baseline ops/s | Kandidat sampel | Kandidat p50 (ms) | Kandidat p95 (ms) | Kandidat ops/s | Rasio ops/s | Percepatan p50 | Percepatan p95 |",
+        "| Operation | Baseline samples | Baseline p50 (ms) | Baseline p95 (ms) | Baseline ops/s | Candidate samples | Candidate p50 (ms) | Candidate p95 (ms) | Candidate ops/s | Ops/s ratio | p50 speedup | p95 speedup |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for operation, label in (("read", "Point read"), ("write", "Point update")):
@@ -307,16 +307,16 @@ def render_micro(baseline: dict[str, Any] | None, current: dict[str, Any] | None
                 ]
             ) + " |"
         )
-    lines.extend(["", "Konfigurasi mikro:"])
-    for name, report in (("baseline", baseline), ("kandidat", current)):
+    lines.extend(["", "Microbenchmark configuration:"])
+    for name, report in (("baseline", baseline), ("candidate", current)):
         if report:
             lines.append(
-                f"- {name}: {report['runs']} run; {format_number(report.get('rows'))} baris; "
-                f"{format_number(report.get('warmup_pairs'))} pasangan warmup; versi "
-                f"{markdown(', '.join(report['versions']))}; durabilitas {markdown(', '.join(report['durability']))}."
+                f"- {name}: {report['runs']} run(s); {format_number(report.get('rows'))} rows; "
+                f"{format_number(report.get('warmup_pairs'))} warmup pairs; version "
+                f"{markdown(', '.join(report['versions']))}; durability {markdown(', '.join(report['durability']))}."
             )
     if baseline and current and baseline.get("rows") != current.get("rows"):
-        lines.append("- Perhatian: jumlah baris baseline dan kandidat berbeda, sehingga rasio tidak setara langsung.")
+        lines.append("- Warning: baseline and candidate row counts differ, so ratios are not directly comparable.")
     return lines
 
 
@@ -324,7 +324,7 @@ def render_tpcc(path: Path, report: Mapping[str, Any]) -> list[str]:
     latency = table(report.get("latency"), f"{path}:latency")
     missing = [name for name in TPCC_FAMILIES if name not in latency]
     if missing:
-        raise ReportError(f"{path} tidak memuat seluruh lima keluarga transaksi: {', '.join(missing)}")
+        raise ReportError(f"{path} does not contain all five transaction families: {', '.join(missing)}")
     summaries = {
         name: scalar_summary(table(latency[name], f"{path}:latency.{name}"), f"{path}:latency.{name}")
         for name in TPCC_FAMILIES
@@ -333,23 +333,23 @@ def render_tpcc(path: Path, report: Mapping[str, Any]) -> list[str]:
     consistency = table(report.get("consistency"), f"{path}:consistency")
     for name, value in consistency.items():
         if not isinstance(value, bool):
-            raise ReportError(f"{path}:consistency.{name} harus boolean")
+            raise ReportError(f"{path}:consistency.{name} must be boolean")
 
     lines = [
-        "## Workload turunan TPC-C: lima keluarga transaksi",
+        "## TPC-C-derived workload: five transaction families",
         "",
         (
-            f"Konfigurasi: {format_number(report.get('warehouses'))} warehouse × "
+            f"Configuration: {format_number(report.get('warehouses'))} warehouse(s) × "
             f"{format_number(report.get('districts_per_warehouse'))} district × "
-            f"{format_number(report.get('customers_per_district'))} customer; "
-            f"{format_number(report.get('items'))} item; seed {markdown(report.get('seed', 'tidak tercatat'))}. "
-            f"Pengukuran {format_number(report.get('transactions'))} transaksi setelah "
-            f"{format_number(report.get('warmup_transactions'))} warmup dalam "
-            f"{format_number(report.get('wall_seconds'))} detik: "
-            f"{format_number(report.get('transactions_per_second'))} transaksi/s."
+            f"{format_number(report.get('customers_per_district'))} customer(s); "
+            f"{format_number(report.get('items'))} item(s); seed {markdown(report.get('seed', 'not recorded'))}. "
+            f"Measured {format_number(report.get('transactions'))} transaction(s) after "
+            f"{format_number(report.get('warmup_transactions'))} warmup transaction(s) in "
+            f"{format_number(report.get('wall_seconds'))} seconds: "
+            f"{format_number(report.get('transactions_per_second'))} transaction(s)/s."
         ),
         "",
-        "| Keluarga | Hitungan | p50 (ms) | p95 (ms) | Mix ops/s |",
+        "| Family | Count | p50 (ms) | p95 (ms) | Mixed ops/s |",
         "|---|---:|---:|---:|---:|",
     ]
     for name in TPCC_FAMILIES:
@@ -358,16 +358,16 @@ def render_tpcc(path: Path, report: Mapping[str, Any]) -> list[str]:
             f"| {name} | {format_number(item['count'])} | {format_number(item['p50_ms'])} | "
             f"{format_number(item['p95_ms'])} | {format_number(item.get('mix_operations_per_second'))} |"
         )
-    lines.extend(["", "Counter transaksi:"])
+    lines.extend(["", "Transaction counters:"])
     for name in ("commits", "expected_rollbacks", "retries", "errors"):
         if name in counters:
             lines.append(f"- `{name}`: {format_number(counters[name])}")
     for name in sorted(set(counters) - {"commits", "expected_rollbacks", "retries", "errors"}):
         lines.append(f"- `{markdown(name)}`: {format_number(counters[name])}")
-    lines.extend(["", "Invariant konsistensi setelah workload:"])
+    lines.extend(["", "Consistency invariants after the workload:"])
     for name in sorted(consistency):
-        lines.append(f"- {'LULUS' if consistency[name] else 'GAGAL'} — `{markdown(name)}`")
-    lines.append(f"- Status keseluruhan: **{'LULUS' if consistency and all(consistency.values()) else 'GAGAL'}**.")
+        lines.append(f"- {'PASS' if consistency[name] else 'FAIL'} — `{markdown(name)}`")
+    lines.append(f"- Overall status: **{'PASS' if consistency and all(consistency.values()) else 'FAIL'}**.")
     return lines
 
 
@@ -375,32 +375,32 @@ def render_tpch(path: Path, report: Mapping[str, Any]) -> list[str]:
     queries = table(report.get("queries"), f"{path}:queries")
     missing = [name for name in TPCH_QUERIES if name not in queries]
     if missing:
-        raise ReportError(f"{path} tidak memuat seluruh 22 query: {', '.join(missing)}")
+        raise ReportError(f"{path} does not contain all 22 queries: {', '.join(missing)}")
     summaries: dict[str, tuple[int, dict[str, float | int]]] = {}
     for name in TPCH_QUERIES:
         section = table(queries[name], f"{path}:queries.{name}")
         if "result_rows" not in section:
-            raise ReportError(f"{path}:queries.{name}.result_rows tidak ada")
+            raise ReportError(f"{path}:queries.{name}.result_rows is missing")
         summaries[name] = (
             integer(section["result_rows"], f"{path}:queries.{name}.result_rows"),
             scalar_summary(section, f"{path}:queries.{name}"),
         )
     oracle = report.get("independent_sql_oracle_passed")
     if oracle is not None and not isinstance(oracle, bool):
-        raise ReportError(f"{path}:independent_sql_oracle_passed harus boolean")
+        raise ReportError(f"{path}:independent_sql_oracle_passed must be boolean")
 
     lines = [
-        "## Workload turunan TPC-H: seluruh 22 query",
+        "## TPC-H-derived workload: all 22 queries",
         "",
         (
-            f"Skala sintetis {markdown(report.get('scale', 'tidak tercatat'))}; "
-            f"{format_number(report.get('repetitions'))} repetisi terukur/query setelah "
-            f"{format_number(report.get('warmup_per_query'))} warmup/query; seed "
-            f"{markdown(report.get('seed', 'tidak tercatat'))}. Generator: "
-            f"{markdown(report.get('generator', 'tidak tercatat'))}."
+            f"Synthetic scale {markdown(report.get('scale', 'not recorded'))}; "
+            f"{format_number(report.get('repetitions'))} measured repetition(s)/query after "
+            f"{format_number(report.get('warmup_per_query'))} warmup(s)/query; seed "
+            f"{markdown(report.get('seed', 'not recorded'))}. Generator: "
+            f"{markdown(report.get('generator', 'not recorded'))}."
         ),
         "",
-        "| Query | Baris hasil | Sampel | p50 (ms) | p95 (ms) |",
+        "| Query | Result rows | Samples | p50 (ms) | p95 (ms) |",
         "|---|---:|---:|---:|---:|",
     ]
     for name in TPCH_QUERIES:
@@ -410,12 +410,12 @@ def render_tpch(path: Path, report: Mapping[str, Any]) -> list[str]:
             f"{format_number(item['p50_ms'])} | {format_number(item['p95_ms'])} |"
         )
     if oracle is True:
-        oracle_text = "**LULUS** — semua hasil dibandingkan dengan oracle SQL independen."
+        oracle_text = "**PASS** — every result was compared with an independent SQL oracle."
     elif oracle is False:
-        oracle_text = "**TIDAK DIJALANKAN** — laporan merekam `false`."
+        oracle_text = "**NOT RUN** — the report records `false`."
     else:
-        oracle_text = "**TIDAK TERCATAT**."
-    lines.extend(["", f"Oracle SQL independen: {oracle_text}"])
+        oracle_text = "**NOT RECORDED**."
+    lines.extend(["", f"Independent SQL oracle: {oracle_text}"])
     return lines
 
 
@@ -427,14 +427,14 @@ def source_lines(
 ) -> list[str]:
     entries: list[tuple[str, Path]] = []
     if baseline:
-        entries.extend(("mikro baseline", path) for path in baseline["source_paths"])
+        entries.extend(("baseline microbenchmark", path) for path in baseline["source_paths"])
     if current:
-        entries.extend(("mikro kandidat", path) for path in current["source_paths"])
+        entries.extend(("candidate microbenchmark", path) for path in current["source_paths"])
     if tpcc:
-        entries.append(("turunan TPC-C", tpcc[0]))
+        entries.append(("TPC-C-derived", tpcc[0]))
     if tpch:
-        entries.append(("turunan TPC-H", tpch[0]))
-    lines = ["## Jejak input", ""]
+        entries.append(("TPC-H-derived", tpch[0]))
+    lines = ["## Input trace", ""]
     lines.extend(f"- {label}: `{markdown(path)}`" for label, path in entries)
     return lines
 
@@ -456,19 +456,19 @@ def build_report(
         reports.extend(baseline["reports"])
 
     lines = [
-        "# Hasil benchmark AiresDB v0.1.0 pada perangkat ini",
+        "# AiresDB v0.1.0 benchmark results on this device",
         "",
-        "**Status benchmark:** hasil berikut adalah pengukuran engineering lokal dari workload turunan TPC-C/TPC-H. Pengujian ini **tidak diaudit oleh TPC dan bukan hasil patuh TPC**, sehingga angkanya **bukan tpmC dan bukan QphH** serta tidak boleh dibandingkan dengan hasil resmi TPC.",
+        "**Benchmark status:** these are local engineering measurements from TPC-C-derived and TPC-H-derived workloads. They are **not audited by TPC and are not TPC-compliant results**, so they are **not tpmC or QphH** and must not be compared with official TPC results.",
         "",
     ]
     lines.extend(render_hardware(reports))
-    lines.extend(["", "## Metodologi", ""])
+    lines.extend(["", "## Methodology", ""])
     lines.extend(
         [
-            "- Semua angka dibaca langsung dari laporan TOML; skrip ini tidak menjalankan workload dan tidak mengarang sampel.",
-            "- p50 dan p95 memakai *nearest-rank*. Warmup dan pemuatan data berada di luar sampel latensi yang diringkas.",
-            "- Pengukuran antarversi bermakna hanya saat perangkat, data, jumlah baris, warmup, dan beban sistem sebanding. Label durabilitas dicantumkan karena biaya flush memengaruhi write.",
-            "- Workload TPC-C memakai driver tertutup, skala/generator yang diungkap, tanpa terminal think time atau audit TPC. Workload TPC-H memakai data sintetis kecuali laporan menyebut DBGEN eksternal; tidak menjalankan prosedur power/throughput/refresh resmi.",
+            "- Every figure is read directly from TOML reports; this script neither runs workloads nor invents samples.",
+            "- p50 and p95 use *nearest-rank*. Warmup and data loading are outside the summarized latency samples.",
+            "- Cross-version measurements are meaningful only when hardware, data, row count, warmup, and system load are comparable. The durability label is shown because flush cost affects writes.",
+            "- The TPC-C-derived workload uses a closed driver, disclosed scale/generator, no terminal think time, and no TPC audit. The TPC-H-derived workload uses synthetic data unless a report declares external DBGEN; it does not run official power, throughput, or refresh procedures.",
         ]
     )
     micro_lines = render_micro(baseline, current)
@@ -501,7 +501,7 @@ def write_atomic(path_text: str, content: str) -> Path:
                 Path(temporary_name).unlink(missing_ok=True)
             except OSError:
                 pass
-        raise ReportError(f"gagal menulis {destination}: {error}") from error
+        raise ReportError(f"could not write {destination}: {error}") from error
     return destination
 
 
@@ -516,7 +516,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ReportError as error:
         print(f"summarize.py: {error}", file=sys.stderr)
         return 2
-    print(f"Laporan tersimpan: {destination}")
+    print(f"Report written: {destination}")
     return 0
 
 

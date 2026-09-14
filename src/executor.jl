@@ -112,8 +112,9 @@ function _hash_join_preserve_left(leftrows::Vector{Row},rightrows::Vector{Row},l
             value = left[left_column]
             value === nothing && continue
             for right in get(buckets,_join_hash_key(value,floating),Row[])
-                _query_budget_work!()
-                push!(rows,vcat(left,right))
+                joined = vcat(left,right)
+                _query_budget_work!(joined)
+                push!(rows,joined)
             end
         end
         return rows
@@ -148,8 +149,9 @@ function _hash_join_preserve_left(leftrows::Vector{Row},rightrows::Vector{Row},l
         value = left[left_column]
         value === nothing && continue
         for right in get(matches,_join_hash_key(value,floating),Row[])
-            _query_budget_work!()
-            push!(rows,vcat(left,right))
+            joined = vcat(left,right)
+            _query_budget_work!(joined)
+            push!(rows,joined)
         end
     end
     rows
@@ -180,8 +182,9 @@ function _join_index_nested_loop_right(leftrows::Vector{Row},rightrows::Vector{R
         position = get(right_table.positions,id,0)
         position == 0 && continue
         right = table_row(right_table,position)
-        _query_budget_work!()
-        push!(rows,vcat(left,right))
+        joined = vcat(left,right)
+        _query_budget_work!(joined)
+        push!(rows,joined)
     end
     rows
 end
@@ -221,13 +224,13 @@ function join_rows(db::Database,q::SelectQuery,schema::Vector{BoundColumn},stack
             # The right relation is a single source, so its local index is just
             # the column position in that source schema.
             right_indices = Int[findfirst(c->c.name == link[2],source_schemas[source]) for link in links]
-            first_link = only(links)
             floating = any(row->any(index->row[index] isa Float64,left_indices),current_rows) ||
                 any(row->any(index->row[index] isa Float64,right_indices),right_rows)
             # Preserve the existing unique-index nested-loop fast path for the
             # original two-source shape. Multi-join steps use the generic hash
             # operator because their left side is an intermediate relation.
             indexed = if length(q.sources) == 2 && current_sources == [q.sources[1]] && source == q.sources[2] && length(links) == 1
+                first_link = only(links)
                 _join_index_nested_loop_right(current_rows,right_rows,get(db.tables,source,nothing),
                     only(left_indices),only(right_indices),
                     schema[resolve_column(ColumnRef(first_link[3],first_link[4]),schema)].kind,
@@ -275,6 +278,7 @@ function order_source_rows(rows::Vector{Row}, orders::Vector{OrderByItem}, bound
     for (index,row) in enumerate(rows)
         _query_budget_tick!()
         keys[index] = Cell[evaluate(expression,row,schema) for expression in bound]
+        _query_budget_memory!(keys[index])
     end
     rows[query_order_permutation(keys,orders)]
 end
@@ -325,9 +329,14 @@ function select_rows(db::Database,q::SelectQuery,stack::Set{String}=Set{String}(
         for group in groups
             _query_budget_tick!()
             representative = isempty(group) ? Cell[nothing for _ in schema] : first(group)
-            _query_budget_work!()
-            push!(output,Cell[evaluate(e,representative,schema,group) for e in bound])
-            isempty(q.orders) || push!(order_keys,Cell[evaluate(e,representative,schema,group) for e in bound_orders])
+            projected = Cell[evaluate(e,representative,schema,group) for e in bound]
+            _query_budget_work!(projected)
+            push!(output,projected)
+            if !isempty(q.orders)
+                order_key = Cell[evaluate(e,representative,schema,group) for e in bound_orders]
+                _query_budget_memory!(order_key)
+                push!(order_keys,order_key)
+            end
         end
         isempty(q.orders) || (output = output[query_order_permutation(order_keys,q.orders)])
         q.limit === nothing || resize!(output,min(length(output),q.limit))
@@ -338,8 +347,9 @@ function select_rows(db::Database,q::SelectQuery,stack::Set{String}=Set{String}(
             stop = q.limit === nothing ? length(rows) : min(length(rows),q.limit)
             for i in 1:stop
                 _query_budget_tick!()
-                top_level ? _query_budget_emit!() : _query_budget_work!()
-                push!(output,Cell[evaluate(e,rows[i],schema) for e in bound])
+                projected = Cell[evaluate(e,rows[i],schema) for e in bound]
+                top_level ? _query_budget_emit!(projected) : _query_budget_work!(projected)
+                push!(output,projected)
             end
         else
             # M: must see the whole filtered source before Limit is applied.
@@ -347,8 +357,9 @@ function select_rows(db::Database,q::SelectQuery,stack::Set{String}=Set{String}(
             stop = q.limit === nothing ? length(rows) : min(length(rows),q.limit)
             for row in rows[1:stop]
                 _query_budget_tick!()
-                top_level ? _query_budget_emit!() : _query_budget_work!()
-                push!(output,Cell[evaluate(e,row,schema) for e in bound])
+                projected = Cell[evaluate(e,row,schema) for e in bound]
+                top_level ? _query_budget_emit!(projected) : _query_budget_work!(projected)
+                push!(output,projected)
             end
         end
     end
@@ -396,8 +407,9 @@ function select_page_store_stream(store::PageStore,db::Database,name::String,q::
         for row in batch
             _query_budget_tick!()
             filter_matches(condition,row,schema) || continue
-            _query_budget_emit!()
-            push!(output,Cell[evaluate(expression,row,schema) for expression in bound])
+            projected = Cell[evaluate(expression,row,schema) for expression in bound]
+            _query_budget_emit!(projected)
+            push!(output,projected)
             q.limit === nothing || length(output) < q.limit || return QueryResult(labels,output)
         end
     end
@@ -486,8 +498,9 @@ function select_page_store_index_stream(store::PageStore,db::Database,name::Stri
         for row in batch
             _query_budget_tick!()
             filter_matches(condition,row,schema) || continue
-            _query_budget_emit!()
-            push!(output,Cell[evaluate(expression,row,schema) for expression in bound])
+            projected = Cell[evaluate(expression,row,schema) for expression in bound]
+            _query_budget_emit!(projected)
+            push!(output,projected)
             q.limit === nothing || length(output) < q.limit || return QueryResult(labels,output)
         end
     end
