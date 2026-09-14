@@ -47,10 +47,7 @@ const _ENGINE_REGISTRY = WeakRef[]
 # could attach to the target after restore validation but before replacement.
 const _DATABASE_MAINTENANCE_LOCK = ReentrantLock()
 
-function _engine_path_key(path::AbstractString)
-    normalized = normpath(abspath(String(path)))
-    Sys.iswindows() ? lowercase(normalized) : normalized
-end
+_engine_path_key(path::AbstractString) = _wal_canonical(String(path))
 
 function _register_engine!(engine::Engine)
     lock(_ENGINE_REGISTRY_LOCK) do

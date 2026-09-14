@@ -11,6 +11,9 @@ allrows(s,table) = rows(s,"Tampilkan '$table' -:")
 
 function fresh(f::Function)
     mktempdir() do dir
+        # Windows CI may return an 8.3 spelling while Engine canonicalizes to
+        # the long path. Keep fixture expectations and cleanup on one identity.
+        dir = realpath(dir)
         session = Session(dir)
         try
             q(session,"Buat 'Perusahaan' -:")

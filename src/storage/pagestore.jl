@@ -175,10 +175,7 @@ end
 const _PAGE_STORE_REGISTRY_LOCK = ReentrantLock()
 const _PAGE_STORE_REGISTRY = Dict{String,PageStore}()
 
-function _page_store_registry_key(path::AbstractString)
-    normalized = normpath(abspath(String(path)))
-    Sys.iswindows() ? lowercase(normalized) : normalized
-end
+_page_store_registry_key(path::AbstractString) = _wal_canonical(String(path))
 
 page_store_path(wal_path::AbstractString) = String(wal_path) * PAGESTORE_SUFFIX
 
@@ -1004,11 +1001,11 @@ end
 
 """Close process-local page stores rooted below `root`; used by controlled hosts/tests."""
 function _close_page_stores_under!(root::AbstractString)
-    target = normpath(abspath(String(root)))
+    target = _wal_canonical(String(root))
     prefix = endswith(target,string(Base.Filesystem.path_separator)) ? target : target * string(Base.Filesystem.path_separator)
     stores = lock(_PAGE_STORE_REGISTRY_LOCK) do
         PageStore[store for store in values(_PAGE_STORE_REGISTRY)
-                  if store.wal_path == target || startswith(normpath(abspath(store.wal_path)),prefix)]
+                  if _wal_canonical(store.wal_path) == target || startswith(_wal_canonical(store.wal_path),prefix)]
     end
     for store in unique(stores)
         # This is an explicit controlled-host/test cleanup hook.  It may be
