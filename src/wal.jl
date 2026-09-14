@@ -53,7 +53,21 @@ const _WAL_PATH_LOCKS = Dict{String,WALPathLock}()
 const _WAL_PATH_LOCKS_GUARD = ReentrantLock()
 
 function _wal_canonical(path::String)
-    p = ispath(path) ? realpath(path) : joinpath(realpath(dirname(abspath(path))),basename(path))
+    normalized = normpath(abspath(path))
+    parent = dirname(normalized)
+    name = basename(normalized)
+    trailing = isempty(name) ? String[] : String[name]
+    # A destination (for example a first backup under `backup/`) can have more
+    # than one missing directory. Resolve the closest existing ancestor rather
+    # than requiring the immediate parent to exist. This also gives Windows a
+    # stable long-path identity when the caller supplied an 8.3 spelling.
+    while !ispath(parent)
+        next = dirname(parent)
+        next == parent && break
+        pushfirst!(trailing,basename(parent))
+        parent = next
+    end
+    p = ispath(parent) ? joinpath(realpath(parent),trailing...) : normalized
     Sys.iswindows() ? lowercase(p) : p
 end
 

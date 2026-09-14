@@ -13,6 +13,11 @@ const A = AiresDB
         execute!(source,"Buat Tabel 'T' Isi 'ID & Value' Dengan 'ID = I(P) & Value = I' -:")
         execute!(source,"Isi Tabel 'T' '1 & 10' -:")
         artifact = joinpath(root,"backup","Bank.aires.bak")
+        @test !ispath(dirname(artifact))
+        @test begin
+            A._page_store_registry_key(artifact)
+            true
+        end
         result = backup_database!(source,artifact)
         @test isfile(artifact)
         @test result.bytes > 0
