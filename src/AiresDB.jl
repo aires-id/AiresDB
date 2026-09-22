@@ -16,7 +16,8 @@ using UUIDs
 
 export TinyServerConfig, TinyServer, start_tinyserver, stop_tinyserver!, server_url,
        initialize_root_credentials!, initialize_user_credentials!, tinyserver_handler, run_client, cli_main,
-       backup_database!, restore_database!, compact_page_store!
+       backup_database!, restore_database!, archive_database!, list_wal_archives,
+       restore_database_at!, compact_page_store!
 
 include("errors.jl")
 include("types.jl")

@@ -21,6 +21,7 @@ database files.
 | Query spill | 1 GiB |
 | HTTP header timeout | 10 seconds |
 | TLS minimum | TLS 1.3 when enabled |
+| CORS | Disabled; explicit origin allowlist only |
 | Login lockout | 5 failures / 60 seconds |
 | Audit log | `.airesdb-audit.jsonl` |
 | Audit rotation | 64 MiB and one `.1` file |
@@ -50,6 +51,13 @@ Native TLS rejects incomplete certificate/key configuration and requires TLS
 1.3 or newer. There is no insecure bypass for a non-loopback bind. A reverse
 proxy on the same host should connect to the loopback listener; a cross-host
 deployment must still use native TLS.
+
+Browser CORS is disabled by default. To permit a website origin, repeat
+`--cors-allow-origin` with an exact `http` or `https` origin (for example,
+`https://app.example`). Wildcards and origins containing paths, query strings,
+or user credentials are rejected. The preflight allowlist contains only the
+public methods and `Authorization`/`Content-Type` headers. See
+[Website integration](WEB.md) for the recommended backend deployment pattern.
 
 Credential format 2 stores `root` as an `admin`. Additional users can be
 created from Julia:

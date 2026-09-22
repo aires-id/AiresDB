@@ -15,6 +15,11 @@ const DEFAULT_MAX_QUERY_SECONDS = 30.0
 const DEFAULT_MAX_RESPONSE_BODY = 64 * 1024 * 1024
 const DEFAULT_MAX_QUERY_MEMORY_BYTES = 64 * 1024 * 1024
 const DEFAULT_MAX_QUERY_SPILL_BYTES = 1024 * 1024 * 1024
+const DEFAULT_AUTO_CHECKPOINT_WAL_BYTES = 64 * 1024 * 1024
+const DEFAULT_AUTO_CHECKPOINT_INTERVAL = 300.0
+const DEFAULT_WAL_ARCHIVE_MAX_BYTES = 0
+const AUTO_CHECKPOINT_RETRY_BASE_SECONDS = 5.0
+const AUTO_CHECKPOINT_RETRY_MAX_SECONDS = 300.0
 const ROOT_CREDENTIAL_FILE = ".airesdb-auth.toml"
 const DEFAULT_AUDIT_LOG_FILE = ".airesdb-audit.jsonl"
 const DEFAULT_AUDIT_MAX_BYTES = 64 * 1024 * 1024
@@ -28,6 +33,7 @@ const DEFAULT_TLS_HANDSHAKE_TIMEOUT = 10.0
 const DEFAULT_HTTP_READ_HEADER_TIMEOUT = 10.0
 const DEFAULT_HTTP_IO_TIMEOUT = 30.0
 const DEFAULT_TLS_MIN_VERSION = HTTP.TLS.TLS1_3_VERSION
+const DEFAULT_CORS_ALLOWED_ORIGINS = String[]
 const CREDENTIALS_MUTEX = ReentrantLock()
 const DUMMY_PASSWORD_SALT = fill(UInt8(0xa5), PASSWORD_SALT_BYTES)
 const DUMMY_PASSWORD = "AiresDB invalid credential"
@@ -47,12 +53,21 @@ Base.@kwdef struct TinyServerConfig
     max_response_body::Int = DEFAULT_MAX_RESPONSE_BODY
     max_query_memory_bytes::Int = DEFAULT_MAX_QUERY_MEMORY_BYTES
     max_query_spill_bytes::Int = DEFAULT_MAX_QUERY_SPILL_BYTES
+    # Checkpoints run only from the maintenance timer, never on the commit path.
+    # A nil archive directory resolves to `data_root/wal-archive` at runtime.
+    auto_checkpoint_wal_bytes::Int = DEFAULT_AUTO_CHECKPOINT_WAL_BYTES
+    auto_checkpoint_interval::Float64 = DEFAULT_AUTO_CHECKPOINT_INTERVAL
+    wal_archive_directory::Union{Nothing,String} = nothing
+    # Zero means that an external volume quota/retention policy owns capacity.
+    wal_archive_max_bytes::Int = DEFAULT_WAL_ARCHIVE_MAX_BYTES
     # Retained for source compatibility; it never bypasses non-loopback TLS.
     allow_insecure_network::Bool = false
     tls_cert_file::Union{Nothing,String} = nothing
     tls_key_file::Union{Nothing,String} = nothing
     tls_handshake_timeout::Float64 = DEFAULT_TLS_HANDSHAKE_TIMEOUT
     tls_min_version::UInt16 = DEFAULT_TLS_MIN_VERSION
+    # Browser access stays disabled unless every permitted origin is listed.
+    cors_allowed_origins::Vector{String} = copy(DEFAULT_CORS_ALLOWED_ORIGINS)
     audit_log_file::String = DEFAULT_AUDIT_LOG_FILE
     audit_max_bytes::Int = DEFAULT_AUDIT_MAX_BYTES
     max_failed_logins::Int = DEFAULT_MAX_FAILED_LOGINS
@@ -86,6 +101,10 @@ mutable struct TinyServer
     active_requests::Int
     http_server::Any
     reaper::Union{Nothing,Timer}
+    checkpoint_timer::Union{Nothing,Timer}
+    maintenance_mutex::ReentrantLock
+    last_checkpoints::Dict{String,Float64}
+    checkpoint_failures::Dict{String,Tuple{Int,Float64}}
     stopped::Bool
 end
 
@@ -93,6 +112,181 @@ _tls_enabled(config::TinyServerConfig) = config.tls_cert_file !== nothing && con
 server_url(server::TinyServer) = (_tls_enabled(server.config) ? "https://" : "http://") *
     HTTP.HostResolvers.join_host_port(server.config.host, server.config.port)
 _credential_path(config::TinyServerConfig) = joinpath(config.data_root, ROOT_CREDENTIAL_FILE)
+
+_auto_checkpoint_enabled(config::TinyServerConfig) =
+    config.auto_checkpoint_wal_bytes > 0 || config.auto_checkpoint_interval > 0
+
+function _server_wal_archive_directory(config::TinyServerConfig)
+    configured = config.wal_archive_directory
+    _wal_archive_root(configured === nothing ? joinpath(config.data_root,"wal-archive") : configured)
+end
+
+_server_wal_archive_limit(config::TinyServerConfig) =
+    config.wal_archive_max_bytes == 0 ? nothing : config.wal_archive_max_bytes
+
+function _auto_checkpoint_timer_interval(config::TinyServerConfig)
+    _auto_checkpoint_enabled(config) || return nothing
+    # Polling reads only cached handle metadata. Five seconds keeps a busy WAL
+    # well below its 256 MiB default capacity without adding work to commits.
+    if config.auto_checkpoint_interval > 0
+        return min(5.0,max(0.1,config.auto_checkpoint_interval/10))
+    end
+    1.0
+end
+
+function _auto_checkpoint_due(server::TinyServer,handle::DatabaseHandle)
+    config = server.config
+    lock(handle.mutex) do
+        handle.lsn > 1 || return false
+        # `_run_auto_checkpoint!` owns maintenance_mutex while reading this
+        # map. A failed archive must not cause a full WAL scan every timer tick.
+        get(server.checkpoint_failures,handle.path,(0,0.0))[2] > time() && return false
+        byte_due = config.auto_checkpoint_wal_bytes > 0 &&
+            handle.offset >= config.auto_checkpoint_wal_bytes
+        # A handle first seen after server start begins a fresh maintenance
+        # interval. The byte threshold still protects an already-large WAL.
+        last = get!(server.last_checkpoints,handle.path,time())
+        time_due = config.auto_checkpoint_interval > 0 &&
+            time()-last >= config.auto_checkpoint_interval
+        byte_due || time_due
+    end
+end
+
+function _record_auto_checkpoint_failure!(server::TinyServer,path::String)
+    previous,_ = get(server.checkpoint_failures,path,(0,0.0))
+    attempts = min(previous+1,7)
+    delay = min(AUTO_CHECKPOINT_RETRY_MAX_SECONDS,
+        AUTO_CHECKPOINT_RETRY_BASE_SECONDS * 2.0^(attempts-1))
+    server.checkpoint_failures[path] = (attempts,time()+delay)
+    nothing
+end
+
+function _clear_auto_checkpoint_failure!(server::TinyServer,path::String)
+    delete!(server.checkpoint_failures,path)
+    nothing
+end
+
+function _run_auto_checkpoint!(server::TinyServer)
+    trylock(server.maintenance_mutex) || return nothing
+    try
+        server.stopped && return nothing
+        handles = lock(server.engine.mutex) do
+            collect(values(server.engine.handles))
+        end
+        for handle in handles
+            _auto_checkpoint_due(server,handle) || continue
+            database = lock(handle.mutex) do
+                handle.current.name
+            end
+            session = Session(server.engine)
+            try
+                open_database!(session,database)
+                # A manual checkpoint may have completed while this maintenance
+                # session was opening. Re-check before taking the write lock.
+                _auto_checkpoint_due(server,session.handle::DatabaseHandle) || continue
+                checkpoint!(session;archive_directory=_server_wal_archive_directory(server.config),
+                    archive_max_bytes=_server_wal_archive_limit(server.config))
+                path = (session.handle::DatabaseHandle).path
+                server.last_checkpoints[path] = time()
+                _clear_auto_checkpoint_failure!(server,path)
+                try
+                    _audit!(server; event="auto_checkpoint", action="checkpoint", outcome="success",
+                        status=200, path="/maintenance")
+                catch error
+                    server.config.verbose && (Base.showerror(stderr,error,catch_backtrace()); println(stderr))
+                end
+            catch error
+                _record_auto_checkpoint_failure!(server,handle.path)
+                try
+                    _audit!(server; event="auto_checkpoint_failed", action="checkpoint",
+                        outcome=_bounded_text(sprint(showerror,error),128), status=503,
+                        path="/maintenance")
+                catch
+                end
+                server.config.verbose && (Base.showerror(stderr,error,catch_backtrace()); println(stderr))
+            finally
+                close(session)
+            end
+        end
+    finally
+        unlock(server.maintenance_mutex)
+    end
+    nothing
+end
+
+function _validate_cors_origin(origin::AbstractString)
+    value = strip(String(origin))
+    ncodeunits(value) <= 512 || throw(ArgumentError("CORS origin is too long."))
+    value == "*" && throw(ArgumentError("CORS wildcard origins are not supported."))
+    isempty(value) && throw(ArgumentError("CORS origin must not be empty."))
+    any(iscntrl, value) && throw(ArgumentError("CORS origin must not contain control characters."))
+    uri = try
+        HTTP.URI(value)
+    catch
+        throw(ArgumentError("CORS origin must be an http or https origin."))
+    end
+    scheme = lowercase(uri.scheme)
+    scheme in ("http", "https") || throw(ArgumentError("CORS origin must use http or https."))
+    isempty(uri.host) && throw(ArgumentError("CORS origin must include a host."))
+    isempty(uri.userinfo) || throw(ArgumentError("CORS origin must not include user credentials."))
+    isempty(uri.path) || throw(ArgumentError("CORS origin must not include a path."))
+    isempty(uri.query) || throw(ArgumentError("CORS origin must not include a query."))
+    isempty(uri.fragment) || throw(ArgumentError("CORS origin must not include a fragment."))
+    value
+end
+
+function _validate_cors_origins!(config::TinyServerConfig)
+    seen = Set{String}()
+    for origin in config.cors_allowed_origins
+        value = _validate_cors_origin(origin)
+        value in seen && throw(ArgumentError("CORS origin is listed more than once: $value"))
+        push!(seen, value)
+    end
+    nothing
+end
+
+function _allowed_cors_origin(config::TinyServerConfig, request::HTTP.Request)
+    origin = strip(HTTP.header(request.headers, "Origin", ""))
+    isempty(origin) && return nothing
+    origin in config.cors_allowed_origins ? origin : nothing
+end
+
+function _append_vary_origin!(response::HTTP.Response)
+    current = HTTP.header(response.headers, "Vary", "")
+    values = filter(!isempty, strip.(split(current, ',')))
+    any(value -> lowercase(value) == "origin", values) || push!(values, "Origin")
+    HTTP.setheader(response, "Vary" => join(values, ", "))
+    response
+end
+
+function _apply_cors_headers!(response::HTTP.Response, origin::AbstractString; preflight::Bool=false)
+    HTTP.setheader(response, "Access-Control-Allow-Origin" => String(origin))
+    _append_vary_origin!(response)
+    if preflight
+        HTTP.setheader(response, "Access-Control-Allow-Methods" => "GET, POST, DELETE, OPTIONS")
+        HTTP.setheader(response, "Access-Control-Allow-Headers" => "Authorization, Content-Type")
+        HTTP.setheader(response, "Access-Control-Max-Age" => "600")
+    end
+    response
+end
+
+function _cors_preflight_response(config::TinyServerConfig, request::HTTP.Request, path::AbstractString)
+    origin = _allowed_cors_origin(config, request)
+    origin === nothing && return _server_error(403, "A1006", "Origin is not allowed.";
+        category="Authorization Error")
+    path in ("/health", "/session", "/query") ||
+        return _server_error(404, "A1003", "Route not found."; category="Request Error")
+    requested_method = uppercase(strip(HTTP.header(request.headers, "Access-Control-Request-Method", "")))
+    requested_method in ("GET", "POST", "DELETE") ||
+        return _server_error(405, "A1003", "Requested method is not allowed."; category="Request Error")
+    requested_headers = filter(!isempty, strip.(split(lowercase(
+        HTTP.header(request.headers, "Access-Control-Request-Headers", "")), ',')))
+    allowed_headers = Set(("authorization", "content-type"))
+    all(header -> header in allowed_headers, requested_headers) ||
+        return _server_error(403, "A1006", "Requested headers are not allowed.";
+            category="Authorization Error")
+    _apply_cors_headers!(HTTP.Response(204), origin; preflight=true)
+end
 
 function _audit_path(config::TinyServerConfig)
     candidate = String(config.audit_log_file)
@@ -673,7 +867,8 @@ function _command_payload(result::AbstractString, elapsed_ms::Float64, session::
        elapsed_ms, database, transaction=in_transaction(session))
 end
 
-function _server_command(session::Session, line::AbstractString)
+function _server_command(server::TinyServer, session::Session, line::AbstractString)
+    config = server.config
     parts = split(strip(line); limit=2)
     command = lowercase(parts[1])
     command in (".help", ".databases", ".tables", ".current", ".mvcc", ".checkpoint", ".vacuum", ".compact") &&
@@ -686,7 +881,7 @@ function _server_command(session::Session, line::AbstractString)
         return format_table(QueryResult(["Database"], [Cell[name] for name in names]))
     elseif command == ".tables"
         if !in_transaction(session)
-            return with_snapshot(() -> _server_command(session, line), session)
+            return with_snapshot(() -> _server_command(server, session, line), session)
         end
         session.transaction.catalog_read = true
         database = active_database(session)
@@ -696,7 +891,7 @@ function _server_command(session::Session, line::AbstractString)
     elseif command == ".schema"
         length(parts) == 2 || fail("Gunakan .schema NamaTabel")
         if !in_transaction(session)
-            return with_snapshot(() -> _server_command(session, line), session)
+            return with_snapshot(() -> _server_command(server, session, line), session)
         end
         name = String(parts[2]); record_read!(session, name)
         table = get_table(active_database(session), name)
@@ -719,7 +914,15 @@ function _server_command(session::Session, line::AbstractString)
             [Cell[string(stats.commit_csn), string(stats.wal_lsn), Int64(stats.active_snapshots),
                   Int64(stats.row_versions), Int64(stats.wal_bytes)]]))
     elseif command == ".checkpoint"
-        return format_table(checkpoint!(session))
+        result = checkpoint!(session;
+            archive_directory=_server_wal_archive_directory(config),
+            archive_max_bytes=_server_wal_archive_limit(config))
+        lock(server.maintenance_mutex) do
+            path = (session.handle::DatabaseHandle).path
+            server.last_checkpoints[path] = time()
+            _clear_auto_checkpoint_failure!(server,path)
+        end
+        return format_table(result)
     elseif command == ".vacuum"
         return "Vacuum selesai; $(vacuum!(session)) versi lama dibersihkan."
     elseif command == ".compact"
@@ -730,8 +933,9 @@ function _server_command(session::Session, line::AbstractString)
     fail("Perintah internal '$command' tidak dikenal. Gunakan .help.")
 end
 
-function _execute_server_query(entry::ServerSession, query::String, config::TinyServerConfig,
+function _execute_server_query(entry::ServerSession, query::String, server::TinyServer,
                                execution_completed::Base.RefValue{Bool})
+    config = server.config
     lock(entry.mutex) do
         stripped = strip(query)
         isempty(stripped) && throw(AiresError("Request Error", "Query must not be empty."))
@@ -745,7 +949,7 @@ function _execute_server_query(entry::ServerSession, query::String, config::Tiny
         try
             payload = _with_query_budget(() -> begin
                 started = time_ns()
-                result = startswith(stripped, ".") ? _server_command(entry.session, stripped) : execute!(entry.session, query)
+                result = startswith(stripped, ".") ? _server_command(server, entry.session, stripped) : execute!(entry.session, query)
                 execution_completed[] = true
                 elapsed = (time_ns() - started) / 1_000_000
                 result isa QueryResult ? _result_payload(result, elapsed, entry.session) : _command_payload(String(result), elapsed, entry.session)
@@ -855,10 +1059,15 @@ function tinyserver_handler(server::TinyServer, request::HTTP.Request)
             category="Resource Limit")
         HTTP.setheader(response, "Retry-After" => "1")
         response.close = true
+        origin = _allowed_cors_origin(server.config, request)
+        origin === nothing || _apply_cors_headers!(response, origin)
         return response
     end
     try
-        _handle_tinyserver_request(server, request)
+        response = _handle_tinyserver_request(server, request)
+        origin = _allowed_cors_origin(server.config, request)
+        origin === nothing || _apply_cors_headers!(response, origin)
+        response
     finally
         _release_request!(server)
     end
@@ -870,7 +1079,9 @@ function _handle_tinyserver_request(server::TinyServer, request::HTTP.Request)
     try
         method = uppercase(String(request.method))
         path = split(String(request.target), '?'; limit=2)[1]
-        if method == "GET" && path == "/health"
+        if method == "OPTIONS"
+            return _cors_preflight_response(server.config, request, path)
+        elseif method == "GET" && path == "/health"
             return _json_response(200, (; ok=true, server="AiresDB", version=AIRESDB_SERVER_VERSION))
         elseif method == "POST" && path == "/session"
             body = _request_json(request, server.config)
@@ -911,7 +1122,7 @@ function _handle_tinyserver_request(server::TinyServer, request::HTTP.Request)
                     action=_query_action(query), outcome=String(permission), status=202,
                     path="/query", query_hash=_query_hash(query),
                     connection_id=entry.connection_id)
-                execution = _execute_server_query(entry, query, server.config, execution_completed)
+                execution = _execute_server_query(entry, query, server, execution_completed)
                 executed = execution_completed[]
                 remaining_memory = max(0,server.config.max_query_memory_bytes - execution.budget.allocated_bytes)
                 response_limit = min(server.config.max_response_body,remaining_memory)
@@ -1024,6 +1235,14 @@ function start_tinyserver(config::TinyServerConfig=TinyServerConfig(); password=
     config.max_query_memory_bytes > 0 || throw(ArgumentError("max_query_memory_bytes must be positive"))
     config.max_query_spill_bytes >= config.max_query_memory_bytes ||
         throw(ArgumentError("max_query_spill_bytes must be at least max_query_memory_bytes"))
+    config.auto_checkpoint_wal_bytes >= 0 ||
+        throw(ArgumentError("auto_checkpoint_wal_bytes must be zero or positive"))
+    isfinite(config.auto_checkpoint_interval) && config.auto_checkpoint_interval >= 0 ||
+        throw(ArgumentError("auto_checkpoint_interval must be finite and zero or positive"))
+    config.wal_archive_max_bytes >= 0 ||
+        throw(ArgumentError("wal_archive_max_bytes must be zero or positive"))
+    config.wal_archive_directory === nothing || _wal_archive_root(config.wal_archive_directory)
+    _validate_cors_origins!(config)
     config.audit_max_bytes > 0 || throw(ArgumentError("audit_max_bytes must be positive"))
     config.max_failed_logins > 0 || throw(ArgumentError("max_failed_logins must be positive"))
     isfinite(config.login_lockout_seconds) && config.login_lockout_seconds > 0 ||
@@ -1047,7 +1266,8 @@ function start_tinyserver(config::TinyServerConfig=TinyServerConfig(); password=
     failed_logins = Dict{String,Tuple{Int,Float64}}(user => (0, 0.0) for user in auth_users)
     server = TinyServer(config, Engine(config.data_root), Dict{String,ServerSession}(),
         ReentrantLock(), ReentrantLock(), ReentrantLock(), auth_users, failed_logins,
-        UInt64(1), 0, nothing, nothing, false)
+        UInt64(1), 0, nothing, nothing, nothing, ReentrantLock(), Dict{String,Float64}(),
+        Dict{String,Tuple{Int,Float64}}(), false)
     _audit!(server; event="server_starting", action="start", outcome="accepted", status=202, path="/")
     interval = min(30.0, max(0.1, config.idle_timeout / 2))
     server.reaper = Timer(interval; interval) do _
@@ -1055,6 +1275,16 @@ function start_tinyserver(config::TinyServerConfig=TinyServerConfig(); password=
             _reap_expired!(server)
         catch error
             config.verbose && (Base.showerror(stderr, error, catch_backtrace()); println(stderr))
+        end
+    end
+    checkpoint_interval = _auto_checkpoint_timer_interval(config)
+    if checkpoint_interval !== nothing
+        server.checkpoint_timer = Timer(checkpoint_interval; interval=checkpoint_interval) do _
+            try
+                _run_auto_checkpoint!(server)
+            catch error
+                config.verbose && (Base.showerror(stderr,error,catch_backtrace()); println(stderr))
+            end
         end
     end
     handler = request -> tinyserver_handler(server, request)
@@ -1084,6 +1314,7 @@ function start_tinyserver(config::TinyServerConfig=TinyServerConfig(); password=
         catch
         end
         close(server.reaper)
+        server.checkpoint_timer === nothing || close(server.checkpoint_timer)
         server.http_server === nothing || close(server.http_server)
         listener === nothing || close(listener)
         rethrow()
@@ -1101,6 +1332,11 @@ function stop_tinyserver!(server::TinyServer)
     end
     server.stopped = true
     server.reaper === nothing || close(server.reaper)
+    server.checkpoint_timer === nothing || close(server.checkpoint_timer)
+    # Wait for a checkpoint that was already running before sessions and the
+    # HTTP listener are torn down. No new maintenance task can pass `stopped`.
+    lock(server.maintenance_mutex) do
+    end
     server.http_server === nothing || close(server.http_server)
     entries = lock(server.mutex) do
         current = collect(values(server.sessions))

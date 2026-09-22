@@ -33,8 +33,8 @@ the `airesdb` command-line monitor.
 - **Indonesian-language AiresQL**, with the `-:` statement terminator and
   multiline input.
 - **ACID transactions and durable storage** through an embedded WAL, checksums,
-  OS-level synchronization, checkpoints, native backup/restore, and torn-tail
-  recovery.
+  OS-level synchronization, automatic checkpoints, immutable WAL archives,
+  LSN point-in-time restore, native backup/restore, and torn-tail recovery.
 - **Optimistic serializable MVCC**, read-your-writes behavior, and
   first-committer-wins conflict handling.
 - **ARSP-4 page storage** with 8 KiB pages, a slotted heap, RIDs, a bounded Clock
@@ -72,35 +72,35 @@ you have a different version, follow the friendly
 
 AiresDB is not yet listed in Julia's General registry, so the GitHub URL is the
 current supported installation source. `Pkg.Apps.add` creates an isolated Julia
-app environment and the `airesdb` launcher. The first part of each command adds
-the General registry only when a fresh Julia installation does not have it yet;
-AiresDB's dependencies are resolved from that registry.
+app environment and the `airesdb` launcher. The command adds the default General
+registry only when a fresh Julia installation has no reachable registry. The
+repository URL is passed as a Julia argument, avoiding nested quote escaping.
 
 Choose the command for your terminal and copy it exactly.
 
 **Linux, macOS, or a Unix shell**
 
 ```sh
-julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add("General"); Pkg.Apps.add(url="https://github.com/aires-id/AiresDB")'
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(); Pkg.Apps.add(url=ARGS[1])' https://github.com/aires-id/AiresDB
 ```
 
 **Windows PowerShell**
 
 ```powershell
-julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.Apps.add(url=\"https://github.com/aires-id/AiresDB\")'
+julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(); Pkg.Apps.add(url=ARGS[1])' https://github.com/aires-id/AiresDB
 ```
 
 **Windows Command Prompt (`cmd.exe`)**
 
 ```bat
-julia -e "using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(\"General\"); Pkg.Apps.add(url=\"https://github.com/aires-id/AiresDB\")"
+julia -e "using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add(); Pkg.Apps.add(url=ARGS[1])" https://github.com/aires-id/AiresDB
 ```
 
 > [!NOTE]
-> The backslashes before the inner quotation marks in the Windows commands are
-> intentional. They ensure that Windows passes the URL to Julia correctly. A
-> command copied from a Unix example with outer single quotes will fail in
-> Command Prompt with `character literal contains multiple characters`.
+> PowerShell uses outer single quotes; Command Prompt uses outer double quotes.
+> Do not copy the Unix or PowerShell form into Command Prompt. That shell does
+> not use single quotes for argument grouping and Julia reports `character
+> literal contains multiple characters`.
 
 > [!NOTE]
 > A first installation can take a few minutes while Julia downloads and
@@ -173,6 +173,16 @@ data in `./data`.
 
 Keep this terminal open while you use AiresDB.
 
+In a second terminal, verify that the server is ready before logging in:
+
+```text
+curl http://127.0.0.1:1972/health
+```
+
+The response is `{"ok":true,"server":"AiresDB","version":"0.1.0"}`.
+In PowerShell, `Invoke-RestMethod http://127.0.0.1:1972/health` is an equivalent
+command.
+
 ### 5. Open the CLI monitor
 
 Open a second terminal and run:
@@ -237,6 +247,45 @@ AiresDB.compact_page_store!("./data", "Perusahaan")
 `vacuum!` and `.vacuum` remove old MVCC history logically. Physical compaction
 is a separate maintenance operation that may replace the sidecar from the
 authoritative WAL.
+
+## Automatic checkpoints and point-in-time restore
+
+TinyServer automatically archives the current verified WAL segment before it
+publishes a replacement checkpoint. This keeps normal commits fast: archive
+copying and checkpoint serialization run only in the maintenance timer, never
+for each transaction. The default policy checkpoints an active database at
+64 MiB of WAL or after 300 seconds, whichever comes first. Archives default to
+`<data-root>/wal-archive`.
+
+For a production deployment, put the archive on a separate, capacity-planned
+volume and set a fail-safe capacity guard:
+
+```text
+airesdb server --data-root D:\AiresDB\data --wal-archive-directory E:\AiresDB-archive --wal-archive-max-bytes 21474836480 --auto-checkpoint-wal-bytes 67108864 --auto-checkpoint-interval 300
+```
+
+If an archive fails or reaches the configured limit, AiresDB refuses the
+checkpoint and retains the authoritative WAL instead of silently shortening the
+recovery window. A local archive is still not a substitute for an off-host
+backup policy.
+
+Each archive is independently restorable. List points and restore either the
+latest record or an exact earlier committed LSN:
+
+```julia
+using AiresDB
+
+points = AiresDB.list_wal_archives("E:/AiresDB-archive", "Perusahaan")
+point = last(points)
+AiresDB.restore_database_at!("./restored", "Perusahaan", "E:/AiresDB-archive", point.id)
+AiresDB.restore_database_at!("./restored-before-change", "Perusahaan",
+    "E:/AiresDB-archive", point.id; lsn=point.lsn - 1)
+```
+
+Stop all sessions and AiresDB processes that use the restore target first. The
+derived `.aires.pages` sidecar is rebuilt on the next open. See
+[automatic checkpoints, WAL archives, and PITR](docs/DURABILITY.md) for
+capacity, timing, integrity, and timestamp-selection details.
 
 ## AiresQL in one minute
 
@@ -303,7 +352,8 @@ Version 0.1.0 exposes four public routes:
 Decimal and Money values use tagged objects such as
 `{"type":"decimal","value":"12.34"}`; `NULL` is represented as JSON `null`.
 See the [HTTP API documentation](docs/HTTP_API.md) for the complete contract and
-client examples.
+client examples. For a website deployment, including a secure browser setup,
+see [Website integration](docs/WEB.md).
 
 ## SDEBO-S750 results
 
@@ -468,6 +518,7 @@ Main documentation:
 - [WAL and recovery](docs/WAL.md)
 - [TinyServer](docs/TINYSERVER.md)
 - [HTTP API](docs/HTTP_API.md)
+- [Website integration](docs/WEB.md)
 - [CLI](docs/CLI.md)
 - [Benchmarks](docs/BENCHMARKS.md)
 - [v0.1.0 technical audit](docs/AUDIT-v0.1.0.md)

@@ -800,7 +800,16 @@ function execute_transaction!(session::Session,command::TransactionCommand)
     fail("Perintah transaksi tidak dikenal.")
 end
 
-function checkpoint!(session::Session)
+"""Publish a compact checkpoint, optionally preserving the replaced WAL as an archive.
+
+When `archive_directory` is supplied, the complete verified WAL prefix is
+published as an immutable archive before the new checkpoint replaces it.  An
+archive failure aborts the checkpoint and leaves the authoritative WAL intact.
+This is intentionally a maintenance operation: commits stay append-only and do
+not perform archive I/O on their hot path.
+"""
+function checkpoint!(session::Session; archive_directory::Union{Nothing,AbstractString}=nothing,
+                     archive_max_bytes=nothing)
     lock(session.mutex) do
         active_database(session)
         in_transaction(session) && fail("Checkpoint tidak boleh dijalankan dalam transaksi.")
@@ -808,6 +817,8 @@ function checkpoint!(session::Session)
         lock(handle.mutex) do
             with_wal_lock(handle.path) do
                 refresh_locked!(handle,session.storage)
+                archive_directory === nothing ||
+                    _archive_database_locked!(session,handle,archive_directory;max_bytes=archive_max_bytes)
                 payload = checkpoint_payload(session.storage,handle.current,handle.csn,handle.epochs,handle.schema_epochs,handle.catalog_epoch)
                 temporary = joinpath(dirname(handle.path),"."*basename(handle.path)*".checkpoint."*string(uuid4())*".aires")
                 try
@@ -825,7 +836,8 @@ function checkpoint!(session::Session)
                 collect_versions!(handle)
             end
         end
-        status_result("Checkpoint durable selesai.")
+        status_result(archive_directory === nothing ? "Checkpoint durable selesai." :
+            "Checkpoint durable selesai; WAL archive published.")
     end
 end
 function vacuum!(session::Session)
