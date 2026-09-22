@@ -228,8 +228,101 @@ finished; those monitor commands do not use `-:`.
 
 That is the complete installation flow. For package-only installation, updates,
 source checkouts, and troubleshooting, see the
-[detailed installation guide](INSTALL.md). The [AiresQL quick reference](#airesql-at-a-glance)
-below covers the most common statements.
+[detailed installation guide](INSTALL.md). The [AiresQL syntax guide](#airesql-syntax-guide)
+below covers the language you can use in the CLI.
+
+## AiresQL syntax guide
+
+AiresQL uses Indonesian keywords, with English explanations here. Start with
+the runnable example above, then use this section as a practical reference
+while working in the CLI.
+
+### Rules to remember
+
+- Keywords are case-insensitive; database, table, and column names are
+  case-sensitive.
+- Every database statement ends with `-:`. Newlines are allowed anywhere
+  between keywords, so long statements can be formatted over several lines.
+- A single-quoted block holds a name, a list of columns or values, or an
+  expression. Use double quotes for text inside that block, such as
+  `Dengan 'Nama = "Aires"' -:`.
+- `&` separates columns, values, and sort items. It is **not** logical AND.
+  Use `&:` for AND and `O:` for OR inside a condition.
+
+| Token | Meaning |
+|---|---|
+| `-:` | End a statement |
+| `&` | Separate columns, values, schema definitions, or sort items |
+| `&:` / `O:` | Logical AND / OR inside an expression |
+| `&&` | Separate projected columns from different joined tables |
+| `&&&` | Separate table sources in a join |
+| `M:` | Sort clause; use `Atas` for ascending or `Bawah` for descending |
+
+### Core syntax
+
+| Goal | Copyable AiresQL |
+|---|---|
+| Create or select a database | `Buat 'Nama' -:` / `Pilih 'Nama' -:` |
+| Create an auto-numbered table | `Buat Tabel 'Karyawan' Isi 'Id & Nama & Gaji' Dengan 'Id = I(P) & Nama = C(225&Not Null) & Gaji = U' Auto_Id -:` |
+| Insert one or more rows | `Isi Tabel 'Karyawan' 'Aires & 7500000' 'Fami & 5500000' -:` |
+| Show all columns | `Pilih '*' Dari 'Karyawan' -:` or `Tampilkan 'Karyawan' -:` |
+| Project and filter | `Pilih 'Nama & Gaji' Dari 'Karyawan' Dengan 'Gaji >= 6000000' -:` |
+| Use a compound condition | `Pilih '*' Dari 'Karyawan' Dengan 'Gaji >= 6000000 &: Nama = "Aires"' -:` |
+| Aggregate and group | `Pilih 'Divisi & Count(*) & Avg(Gaji)' Dari 'Karyawan' Grup Dari 'Divisi' -:` |
+| Sort and limit | `Pilih 'Nama & Gaji' Dari 'Karyawan' M: 'Gaji Bawah & Nama Atas' Limit(10) -:` |
+| Update matching rows | `Tabel_Upt 'Karyawan' Isi 'Gaji = Gaji + 500000' Dengan 'Id = 1' -:` |
+| Delete matching rows | `Baris_Rmv 'Karyawan' Dengan 'Id = 1' -:` |
+| Add or remove a column | `Tabel_Upt 'Karyawan' + Kolom 'Email' Dengan 'Email = C(225&Null)' -:` / `Kolom_Rmv 'Karyawan.Email' -:` |
+| Create a live view | `Lihat 'GajiTinggi' Pilih 'Nama & Gaji' Dari 'Karyawan' Dengan 'Gaji > 6000000' -:` |
+| Join two tables | `Pilih 'Karyawan.Nama && Divisi.Nama' Dari 'Karyawan &&& Divisi' Gabung Dengan 'Karyawan.DivisiId = Divisi.Id' -:` |
+| Join several tables | `Pilih '*' Dari 'A &&& B &&& C' Gabung Dengan 'A.Id = B.AId &: B.Id = C.BId' -:` |
+| Inspect a read-only plan | `EXPLAIN Pilih '*' Dari 'Karyawan' -:` |
+
+`Tabel_Upt` and `Baris_Rmv` without `Dengan` affect every row in the table.
+Use a condition unless that is explicitly your intention.
+
+### Column types and constraints
+
+Define columns in the `Dengan` block of `Buat Tabel` or `+ Kolom`.
+
+| Type | Meaning | Example definition |
+|---|---|---|
+| `I` | Integer | `Id = I(P)` |
+| `U` | Exact money value | `Gaji = U` |
+| `D` | Exact decimal value | `Diskon = D` |
+| `F` | Floating-point value | `Skor = F` |
+| `B` | Boolean | `Aktif = B` |
+| `C(n)` | Text with a maximum length | `Nama = C(225&Not Null)` |
+| `T` | Date | `Lahir = T` |
+| `W` | Time | `Masuk = W` |
+| `Tw` | Date and time | `Dibuat = Tw` |
+
+Use `P` for a primary key, `N` for a unique value, and `Null` or `Not Null` to
+set nullability. Add `Auto_Id` (or `Auto_(Id)`) after the schema to make an
+integer column auto-increment.
+
+### Transactions and CLI commands
+
+Autocommit is used outside a transaction. Use `Transaksi` when several changes
+must succeed or fail together:
+
+```text
+Transaksi -:
+Tabel_Upt 'Rekening' Isi 'Saldo = Saldo - 500000' Dengan 'Id = 1' -:
+Tabel_Upt 'Rekening' Isi 'Saldo = Saldo + 500000' Dengan 'Id = 2' -:
+Gabungkan -:
+```
+
+Use `Kembalikan -:` instead of `Gabungkan -:` to roll back. CLI monitor commands
+are not AiresQL and therefore do not need `-:`: `.help`, `.databases`,
+`.tables`, `.schema Nama`, `.current`, `.mvcc`, `.checkpoint`, `.vacuum`,
+`.compact`, `.cancel`, and `.exit`.
+
+For the full grammar, expression rules, literals, result ordering, views,
+multi-join requirements, and error behavior, read the complete
+[AiresQL reference](docs/AIRESQL.md). A smaller runnable script is available at
+[examples/demo.txt](examples/demo.txt), and the [CLI guide](docs/CLI.md) covers
+interactive use.
 
 ## Native backup and restore
 
@@ -312,29 +405,6 @@ Stop all sessions and AiresDB processes that use the restore target first. The
 derived `.aires.pages` sidecar is rebuilt on the next open. See
 [automatic checkpoints, WAL archives, and PITR](docs/DURABILITY.md) for
 capacity, timing, integrity, and timestamp-selection details.
-
-## AiresQL at a glance
-
-AiresQL uses Indonesian keywords. Keywords are case-insensitive, while table
-and column names are case-sensitive. Every database statement ends with `-:`.
-
-| Task | AiresQL |
-|---|---|
-| Create or select a database | `Buat 'Nama' -:` / `Pilih 'Nama' -:` |
-| Create a table | `Buat Tabel 'T' Isi 'Id & Nama' Dengan 'Id = I(P) & Nama = C(225&Not Null)' Auto_Id -:` |
-| Insert a row | `Isi Tabel 'T' 'Aires' -:` |
-| Read and filter rows | `Pilih 'Nama' Dari 'T' Dengan 'Id >= 1' -:` |
-| Sort and limit a query | `Pilih '*' Dari 'T' M: 'Id Bawah' Limit(10) -:` |
-| Use a transaction | `Transaksi -:` then `Gabungkan -:` to commit, or `Kembalikan -:` to roll back |
-| Inspect a read-only plan | `EXPLAIN Pilih '*' Dari 'T' -:` |
-
-Inside quoted lists, `&` separates columns or values. Use `&:` for logical AND
-and `O:` for logical OR in a condition. CLI monitor commands such as `.help`,
-`.databases`, `.tables`, `.schema Nama`, `.current`, `.mvcc`, and `.exit` are
-not AiresQL statements, so they do not use the `-:` terminator.
-
-See the full [AiresQL reference](docs/AIRESQL.md), the runnable
-[example script](examples/demo.txt), and the [CLI guide](docs/CLI.md).
 
 ## Architecture
 
