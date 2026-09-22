@@ -10,7 +10,7 @@ bukan fitur yang sudah tersedia.
 
 | Area | Status v0.1.0 | Langkah lanjutan |
 |---|---|---|
-| WAL/durability | Embedded WAL, checksum, LSN, OS sync, torn-tail recovery, native checksummed backup/atomic restore | WAL archival, observability I/O |
+| WAL/durability | Embedded WAL, checksum, LSN, OS sync, torn-tail recovery, native checksummed backup/atomic restore, automatic checkpoint, immutable WAL archive, LSN PITR | off-host archive transport, retention tooling, observability I/O |
 | MVCC | snapshot COW, row version stamp/history, serializable certification | predicate/range tracking lebih presisi, public time travel bila ada kontrak retention |
 | Concurrency | shared Engine, multiprocess advisory lock, incremental refresh | stress lebih panjang, fairness/backoff, cancellation |
 | Storage | page manager 8 KiB, slotted heap, RID, bounded Clock buffer pool, WAL page-LSN guard, scheduler 4 lane, async P2 cache miss, offline physical PageStore compact/rebuild | multi-page catalog, online vacuum/free-space map, physical snapshot history tanpa fallback legacy, async P3 traversal |
@@ -39,8 +39,9 @@ bukan fitur yang sudah tersedia.
    tersedia untuk equality join.
 6. **AiresQL berikutnya.** Alias, IS NULL, HAVING, foreign key, prepared query
    bertipe, bulk import, dan CSV.
-7. **Operational tooling.** inspect WAL, maintenance scheduling, metrics, dan
-   migration dry-run.
+7. **Operational tooling.** inspect WAL, off-host archive transport/retention,
+   metrics, dan migration dry-run. Automatic checkpoint, immutable local WAL
+   archive, dan LSN PITR sudah tersedia.
 8. **Server mode.** TLS 1.3 native, AST-based RBAC, bounded login throttling,
    bearer-only session, absolute session lifetime, bounded request/header,
    fail-closed audit, dan query quota/cancellation guard sudah tersedia.

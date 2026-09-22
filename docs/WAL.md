@@ -120,11 +120,21 @@ The return value contains `file_id`, `major`, `minor`, `lsn`, `end_offset`,
 The public `wal_read`, `wal_append`, and `wal_create` acquire the lock themselves.
 
 Append uses a verified per-process receipt to refresh incrementally rather than
-rescan the complete historical file before each transaction. The WAL is
-append-only; automatic history compaction is not implemented in this layer.
-Long-lived databases therefore need an explicit engine checkpoint or backup
-policy and sufficient disk capacity. Concurrent online replacement requires the
-engine's generation checks and cannot be implemented by simply renaming files.
+rescan the complete historical file before each transaction. The WAL remains
+append-only on the commit path. TinyServer schedules automatic maintenance by
+WAL size or elapsed time; before replacing a segment with a checkpoint it
+publishes a verified immutable archive of that complete prefix. A failed archive
+aborts the checkpoint, so a capacity or I/O error cannot silently discard the
+recovery window.
+
+The embedded `Session` API remains explicit by default: callers can pass an
+archive directory to `checkpoint!`, or use `archive_database!` in their own
+maintenance job. Archive artifacts are self-contained WAL prefixes and support
+LSN record-boundary PITR through `restore_database_at!`. See
+[automatic checkpoints, WAL archives, and PITR](DURABILITY.md) for the policy,
+capacity, and restore contract. Concurrent online replacement still requires
+the engine's generation checks and cannot be implemented by simply renaming
+files.
 
 ## Failure injection and verification
 

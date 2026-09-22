@@ -33,8 +33,8 @@ the `airesdb` command-line monitor.
 - **Indonesian-language AiresQL**, with the `-:` statement terminator and
   multiline input.
 - **ACID transactions and durable storage** through an embedded WAL, checksums,
-  OS-level synchronization, checkpoints, native backup/restore, and torn-tail
-  recovery.
+  OS-level synchronization, automatic checkpoints, immutable WAL archives,
+  LSN point-in-time restore, native backup/restore, and torn-tail recovery.
 - **Optimistic serializable MVCC**, read-your-writes behavior, and
   first-committer-wins conflict handling.
 - **ARSP-4 page storage** with 8 KiB pages, a slotted heap, RIDs, a bounded Clock
@@ -247,6 +247,45 @@ AiresDB.compact_page_store!("./data", "Perusahaan")
 `vacuum!` and `.vacuum` remove old MVCC history logically. Physical compaction
 is a separate maintenance operation that may replace the sidecar from the
 authoritative WAL.
+
+## Automatic checkpoints and point-in-time restore
+
+TinyServer automatically archives the current verified WAL segment before it
+publishes a replacement checkpoint. This keeps normal commits fast: archive
+copying and checkpoint serialization run only in the maintenance timer, never
+for each transaction. The default policy checkpoints an active database at
+64 MiB of WAL or after 300 seconds, whichever comes first. Archives default to
+`<data-root>/wal-archive`.
+
+For a production deployment, put the archive on a separate, capacity-planned
+volume and set a fail-safe capacity guard:
+
+```text
+airesdb server --data-root D:\AiresDB\data --wal-archive-directory E:\AiresDB-archive --wal-archive-max-bytes 21474836480 --auto-checkpoint-wal-bytes 67108864 --auto-checkpoint-interval 300
+```
+
+If an archive fails or reaches the configured limit, AiresDB refuses the
+checkpoint and retains the authoritative WAL instead of silently shortening the
+recovery window. A local archive is still not a substitute for an off-host
+backup policy.
+
+Each archive is independently restorable. List points and restore either the
+latest record or an exact earlier committed LSN:
+
+```julia
+using AiresDB
+
+points = AiresDB.list_wal_archives("E:/AiresDB-archive", "Perusahaan")
+point = last(points)
+AiresDB.restore_database_at!("./restored", "Perusahaan", "E:/AiresDB-archive", point.id)
+AiresDB.restore_database_at!("./restored-before-change", "Perusahaan",
+    "E:/AiresDB-archive", point.id; lsn=point.lsn - 1)
+```
+
+Stop all sessions and AiresDB processes that use the restore target first. The
+derived `.aires.pages` sidecar is rebuilt on the next open. See
+[automatic checkpoints, WAL archives, and PITR](docs/DURABILITY.md) for
+capacity, timing, integrity, and timestamp-selection details.
 
 ## AiresQL in one minute
 

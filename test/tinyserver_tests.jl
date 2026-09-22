@@ -55,6 +55,10 @@ query(server, token, text) = request_json("POST", server_url(server) * "/query",
     @test TinyServerConfig().max_result_rows == 100_000
     @test TinyServerConfig().max_query_seconds == 30.0
     @test TinyServerConfig().max_response_body == 64 * 1024 * 1024
+    @test TinyServerConfig().auto_checkpoint_wal_bytes == 64 * 1024 * 1024
+    @test TinyServerConfig().auto_checkpoint_interval == 300.0
+    @test TinyServerConfig().wal_archive_directory === nothing
+    @test TinyServerConfig().wal_archive_max_bytes == 0
     @test TS._json_serialized_upper_bound((; text="quote: \" and control: \n")) >=
         ncodeunits(JSON3.write((; text="quote: \" and control: \n")))
     @test_throws AiresError TS._json_response(200,(; value=repeat("x",128));max_bytes=64)
@@ -69,6 +73,59 @@ query(server, token, text) = request_json("POST", server_url(server) * "/query",
     @test TinyServerConfig().max_tracked_login_users == 1024
     @test TS.CLIENT_HTTP_IDLE_TIMEOUT_NS <
         round(Int64, TS.DEFAULT_HTTP_READ_HEADER_TIMEOUT * 1_000_000_000)
+
+    @testset "automatic checkpoints archive before replacing WAL" begin
+        mktempdir() do directory
+            archive_directory = joinpath(directory,"archive")
+            server = start_fixture(directory; auto_checkpoint_wal_bytes=1,
+                auto_checkpoint_interval=0, wal_archive_directory=archive_directory)
+            try
+                _, logged_in = login(server)
+                token = String(logged_in["session"])
+                @test query(server,token,"Buat 'AutoCheckpoint' -:")[1] == 200
+                @test query(server,token,"Buat Tabel 'T' Isi 'ID & Value' Dengan 'ID = I(P) & Value = I' -:")[1] == 200
+                @test query(server,token,"Isi Tabel 'T' '1 & 10' -:")[1] == 200
+                TS._run_auto_checkpoint!(server)
+                archives = list_wal_archives(archive_directory,"AutoCheckpoint")
+                @test !isempty(archives)
+                @test only(TS.wal_read(joinpath(directory,"AutoCheckpoint.aires")).records).lsn == 1
+                @test occursin("auto_checkpoint",read(joinpath(directory,TS.DEFAULT_AUDIT_LOG_FILE),String))
+            finally
+                stop_tinyserver!(server)
+                TS._close_page_stores_under!(directory)
+            end
+        end
+    end
+
+    @testset "failed automatic checkpoints back off without rewriting WAL" begin
+        mktempdir() do directory
+            archive_directory = joinpath(directory,"archive")
+            server = start_fixture(directory; auto_checkpoint_wal_bytes=1,
+                auto_checkpoint_interval=0, wal_archive_directory=archive_directory,
+                wal_archive_max_bytes=1)
+            try
+                _, logged_in = login(server)
+                token = String(logged_in["session"])
+                @test query(server,token,"Buat 'ArchiveBackoff' -:")[1] == 200
+                @test query(server,token,"Buat Tabel 'T' Isi 'ID & Value' Dengan 'ID = I(P) & Value = I' -:")[1] == 200
+                @test query(server,token,"Isi Tabel 'T' '1 & 10' -:")[1] == 200
+                path = joinpath(directory,"ArchiveBackoff.aires")
+                before = read(path)
+                TS._run_auto_checkpoint!(server)
+                retry = only(values(server.checkpoint_failures))
+                @test retry[1] == 1
+                @test retry[2] > time()
+                @test read(path) == before
+                TS._run_auto_checkpoint!(server)
+                @test only(values(server.checkpoint_failures)) == retry
+                audit_lines = split(read(joinpath(directory,TS.DEFAULT_AUDIT_LOG_FILE),String),'\n')
+                @test count(line -> occursin("auto_checkpoint_failed",line),audit_lines) == 1
+            finally
+                stop_tinyserver!(server)
+                TS._close_page_stores_under!(directory)
+            end
+        end
+    end
 
     @testset "CLI replaces server-expired pooled connections" begin
         mktempdir() do directory
@@ -579,7 +636,9 @@ query(server, token, text) = request_json("POST", server_url(server) * "/query",
         server_mode, parsed = TS._parse_cli_options(["server", "--max-header-bytes", "16384",
             "--max-concurrent-requests", "32", "--max-session-lifetime", "7200",
             "--max-query-seconds", "12.5", "--audit-max-bytes", "4096",
-            "--max-failed-logins", "3", "--login-lockout-seconds", "90"])
+            "--max-failed-logins", "3", "--login-lockout-seconds", "90",
+            "--auto-checkpoint-wal-bytes", "1048576", "--auto-checkpoint-interval", "45",
+            "--wal-archive-directory", "D:/archive", "--wal-archive-max-bytes", "4096"])
         @test server_mode
         @test parsed["max_header_bytes"] === 16384
         @test parsed["max_concurrent_requests"] === 32
@@ -588,6 +647,10 @@ query(server, token, text) = request_json("POST", server_url(server) * "/query",
         @test parsed["audit_max_bytes"] === 4096
         @test parsed["max_failed_logins"] === 3
         @test parsed["login_lockout_seconds"] === 90.0
+        @test parsed["auto_checkpoint_wal_bytes"] === 1_048_576
+        @test parsed["auto_checkpoint_interval"] === 45.0
+        @test parsed["wal_archive_directory"] == "D:/archive"
+        @test parsed["wal_archive_max_bytes"] === 4096
         _, parsed = TS._parse_cli_options(["server", "--cors-allow-origin", "https://app.example",
             "--cors-allow-origin", "http://localhost:3000"])
         @test parsed["cors_allowed_origins"] == ["https://app.example", "http://localhost:3000"]

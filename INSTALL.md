@@ -114,6 +114,18 @@ airesdb server
 The first start asks you to create and confirm the `root` password. Keep this
 terminal open. TinyServer listens on `127.0.0.1:1972` by default.
 
+TinyServer also enables automatic WAL checkpoints by default: it archives a
+verified WAL segment before checkpointing at 64 MiB or after 300 seconds. The
+default local archive path is `data/wal-archive`. For a serious deployment,
+choose a separate archive volume and a capacity guard:
+
+```text
+airesdb server --data-root D:\AiresDB\data --wal-archive-directory E:\AiresDB-archive --wal-archive-max-bytes 21474836480
+```
+
+See [automatic checkpoints, WAL archives, and PITR](docs/DURABILITY.md) before
+setting retention or restoring data.
+
 In a second terminal, verify that the server is ready:
 
 ```text

@@ -260,6 +260,10 @@ function _parse_cli_options(args::Vector{String})
         "max_response_body" => DEFAULT_MAX_RESPONSE_BODY,
         "max_query_memory_bytes" => DEFAULT_MAX_QUERY_MEMORY_BYTES,
         "max_query_spill_bytes" => DEFAULT_MAX_QUERY_SPILL_BYTES,
+        "auto_checkpoint_wal_bytes" => DEFAULT_AUTO_CHECKPOINT_WAL_BYTES,
+        "auto_checkpoint_interval" => DEFAULT_AUTO_CHECKPOINT_INTERVAL,
+        "wal_archive_directory" => nothing,
+        "wal_archive_max_bytes" => DEFAULT_WAL_ARCHIVE_MAX_BYTES,
         "tls" => false, "tls_ca_file" => nothing,
         "tls_cert_file" => nothing, "tls_key_file" => nothing,
         "cors_allowed_origins" => String[],
@@ -280,7 +284,9 @@ function _parse_cli_options(args::Vector{String})
                    "--max-query-spill-bytes", "--tls-ca-file", "--tls-cert-file",
                    "--tls-key-file", "--audit-log-file", "--audit-max-bytes",
                    "--max-failed-logins", "--login-lockout-seconds", "--max-tracked-login-users",
-                   "--cors-allow-origin")
+                   "--cors-allow-origin", "--auto-checkpoint-wal-bytes",
+                   "--auto-checkpoint-interval", "--wal-archive-directory",
+                   "--wal-archive-max-bytes")
             index < length(args) || throw(ArgumentError("$arg requires a value."))
             index += 1; value = args[index]
             key = arg in ("-h", "--host") ? "host" : arg in ("-P", "--port") ? "port" :
@@ -293,9 +299,10 @@ function _parse_cli_options(args::Vector{String})
                 options[key] = key in ("port", "max_header_bytes", "max_request_body",
                                    "max_concurrent_requests", "max_sessions", "max_result_rows", "max_response_body",
                                    "max_query_memory_bytes", "max_query_spill_bytes", "audit_max_bytes",
-                                   "max_failed_logins", "max_tracked_login_users") ? parse(Int, value) :
+                                   "max_failed_logins", "max_tracked_login_users", "auto_checkpoint_wal_bytes",
+                                   "wal_archive_max_bytes") ? parse(Int, value) :
                            key in ("idle_timeout", "max_session_lifetime", "max_query_seconds",
-                                   "login_lockout_seconds") ? parse(Float64, value) : value
+                                   "login_lockout_seconds", "auto_checkpoint_interval") ? parse(Float64, value) : value
             end
         elseif arg == "-p"
             options["ask_password"] = true
@@ -332,7 +339,7 @@ function _server_password(config::TinyServerConfig)
 end
 
 function _print_usage(io::IO=stdout)
-    println(io, "airesdb server [--host HOST] [--port PORT] [--data-root DIR] [--tls-cert-file FILE --tls-key-file FILE] [--cors-allow-origin ORIGIN]... [--audit-log-file FILE] [--audit-max-bytes BYTES] [--max-header-bytes BYTES] [--max-request-body BYTES] [--max-concurrent-requests N] [--max-sessions N] [--idle-timeout N] [--max-session-lifetime N] [--max-failed-logins N] [--login-lockout-seconds N] [--max-result-rows N] [--max-query-seconds N] [--max-response-body BYTES] [--max-query-memory-bytes BYTES] [--max-query-spill-bytes BYTES] [--verbose]")
+    println(io, "airesdb server [--host HOST] [--port PORT] [--data-root DIR] [--tls-cert-file FILE --tls-key-file FILE] [--cors-allow-origin ORIGIN]... [--auto-checkpoint-wal-bytes BYTES] [--auto-checkpoint-interval SECONDS] [--wal-archive-directory DIR] [--wal-archive-max-bytes BYTES] [--audit-log-file FILE] [--audit-max-bytes BYTES] [--max-header-bytes BYTES] [--max-request-body BYTES] [--max-concurrent-requests N] [--max-sessions N] [--idle-timeout N] [--max-session-lifetime N] [--max-failed-logins N] [--login-lockout-seconds N] [--max-result-rows N] [--max-query-seconds N] [--max-response-body BYTES] [--max-query-memory-bytes BYTES] [--max-query-spill-bytes BYTES] [--verbose]")
     println(io, "airesdb -u USER -p [-h HOST] [-P PORT] [--tls [--tls-ca-file FILE]] [--file SCRIPT] [--no-banner]")
 end
 
@@ -352,6 +359,10 @@ function cli_main(args::Vector{String}=ARGS)
                 max_result_rows=options["max_result_rows"], max_query_seconds=options["max_query_seconds"],
                 max_response_body=options["max_response_body"],
                 max_query_memory_bytes=options["max_query_memory_bytes"], max_query_spill_bytes=options["max_query_spill_bytes"],
+                auto_checkpoint_wal_bytes=options["auto_checkpoint_wal_bytes"],
+                auto_checkpoint_interval=options["auto_checkpoint_interval"],
+                wal_archive_directory=options["wal_archive_directory"],
+                wal_archive_max_bytes=options["wal_archive_max_bytes"],
                 tls_cert_file=options["tls_cert_file"], tls_key_file=options["tls_key_file"],
                 cors_allowed_origins=options["cors_allowed_origins"],
                 audit_log_file=options["audit_log_file"], audit_max_bytes=options["audit_max_bytes"],
