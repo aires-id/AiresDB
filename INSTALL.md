@@ -69,7 +69,7 @@ export PATH="$HOME/.julia/bin:$PATH"
 ### Windows PowerShell
 
 ```powershell
-$env:Path += ";$HOME\.julia\bin"
+$env:Path += ";$env:USERPROFILE\.julia\bin"
 ```
 
 ### Windows Command Prompt
